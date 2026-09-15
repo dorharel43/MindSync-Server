@@ -1,0 +1,4 @@
+{
+  "_comment": "Which server this build talks to. Read once at startup by main.js. Leave serverUrl empty for a development build and it falls back to http://localhost:5000/api. Fill it in with the deployed address before running `npm run dist:win`, so the installer works on a machine that isn't running the server locally. A value saved from the Settings screen overrides this, so a tester can be pointed somewhere else without a new installer.",
+  "serverUrl": ""
+}
