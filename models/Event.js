@@ -2,6 +2,14 @@ const mongoose = require('mongoose');
 
 const eventSchema = new mongoose.Schema(
   {
+    // AUTH: see the same field on Task.js - identical reasoning applies here.
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+
     title: {
       type: String,
       required: [true, 'Event title is required'],
@@ -64,5 +72,8 @@ const eventSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// The weekly board's own query - all of my events, in time order.
+eventSchema.index({ userId: 1, time: 1 });
 
 module.exports = mongoose.model('Event', eventSchema);

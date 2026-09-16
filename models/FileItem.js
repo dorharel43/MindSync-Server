@@ -2,6 +2,14 @@ const mongoose = require('mongoose');
 
 const fileItemSchema = new mongoose.Schema(
   {
+    // AUTH: see Task.js for the reasoning.
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+
     name: {
       type: String,
       required: [true, 'File name is required'],
@@ -30,5 +38,7 @@ const fileItemSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+fileItemSchema.index({ userId: 1, folder: 1 });
 
 module.exports = mongoose.model('FileItem', fileItemSchema);

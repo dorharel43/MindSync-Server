@@ -3,13 +3,19 @@ const router = express.Router();
 const Task = require('../models/Task');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../middleware/ApiError');
+const { requireAuth } = require('../middleware/auth');
+
+// AUTH: every route below only ever touches the caller's own tasks.
+// Applied once here rather than per-route so a new route added later can't
+// forget it.
+router.use(requireAuth);
 
 // GET /api/tasks - list all, newest first.
 // Optional filters: ?status=open|completed  ?category=<name>
 router.get(
   '/',
   asyncHandler(async (req, res) => {
-    const filter = {};
+    const filter = { userId: req.userId };
     if (req.query.status) filter.status = req.query.status;
     if (req.query.category !== undefined) filter.category = req.query.category;
 
@@ -24,7 +30,7 @@ router.get(
 router.get(
   '/categories',
   asyncHandler(async (req, res) => {
-    const categories = await Task.distinct('category', { category: { $ne: '' } });
+    const categories = await Task.distinct('category', { userId: req.userId, category: { $ne: '' } });
     res.json(categories.sort());
   })
 );
@@ -33,7 +39,10 @@ router.get(
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const task = await Task.findById(req.params.id);
+    // findOne with both _id and userId, not findById - findById alone would
+    // return (and later, findByIdAndUpdate/findByIdAndDelete would let you
+    // modify) another user's task if you simply knew or guessed its id.
+    const task = await Task.findOne({ _id: req.params.id, userId: req.userId });
     if (!task) throw new ApiError(404, 'Task not found');
     res.json(task);
   })
@@ -51,7 +60,11 @@ router.post(
       ? subtasks.map((s) => (typeof s === 'string' ? { title: s, completed: false } : { title: s.title, completed: !!s.completed }))
       : [];
 
-    const task = await Task.create({ title, date, dueDate, estimatedMinutes, urgency, category, subtasks: normalizedSubtasks });
+    const task = await Task.create({
+      userId: req.userId,
+      title, date, dueDate, estimatedMinutes, urgency, category,
+      subtasks: normalizedSubtasks
+    });
     res.status(201).json(task);
   })
 );
@@ -61,8 +74,8 @@ router.put(
   '/:id',
   asyncHandler(async (req, res) => {
     const { title, date, dueDate, estimatedMinutes, urgency, category, status } = req.body;
-    const task = await Task.findByIdAndUpdate(
-      req.params.id,
+    const task = await Task.findOneAndUpdate(
+      { _id: req.params.id, userId: req.userId },
       { title, date, dueDate, estimatedMinutes, urgency, category, status },
       { new: true, runValidators: true, omitUndefined: true }
     );
@@ -82,7 +95,7 @@ router.post(
     const { title } = req.body;
     if (!title || !title.trim()) throw new ApiError(400, 'Subtask title is required');
 
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findOne({ _id: req.params.id, userId: req.userId });
     if (!task) throw new ApiError(404, 'Task not found');
 
     task.subtasks.push({ title: title.trim(), completed: false });
@@ -97,7 +110,7 @@ router.post(
 router.patch(
   '/:id/subtasks/:subtaskId',
   asyncHandler(async (req, res) => {
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findOne({ _id: req.params.id, userId: req.userId });
     if (!task) throw new ApiError(404, 'Task not found');
 
     const subtask = task.subtasks.id(req.params.subtaskId);
@@ -123,7 +136,7 @@ router.patch(
 router.delete(
   '/:id/subtasks/:subtaskId',
   asyncHandler(async (req, res) => {
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findOne({ _id: req.params.id, userId: req.userId });
     if (!task) throw new ApiError(404, 'Task not found');
 
     const subtask = task.subtasks.id(req.params.subtaskId);
@@ -145,7 +158,7 @@ router.delete(
 router.delete(
   '/:id',
   asyncHandler(async (req, res) => {
-    const task = await Task.findByIdAndDelete(req.params.id);
+    const task = await Task.findOneAndDelete({ _id: req.params.id, userId: req.userId });
     if (!task) throw new ApiError(404, 'Task not found');
     res.json({ success: true, deletedId: req.params.id });
   })

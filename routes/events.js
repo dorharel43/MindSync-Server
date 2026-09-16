@@ -3,12 +3,15 @@ const router = express.Router();
 const Event = require('../models/Event');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../middleware/ApiError');
+const { requireAuth } = require('../middleware/auth');
+
+router.use(requireAuth);
 
 // GET /api/events
 router.get(
   '/',
   asyncHandler(async (req, res) => {
-    const events = await Event.find().sort({ time: 1 });
+    const events = await Event.find({ userId: req.userId }).sort({ time: 1 });
     res.json(events);
   })
 );
@@ -17,7 +20,7 @@ router.get(
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const event = await Event.findById(req.params.id);
+    const event = await Event.findOne({ _id: req.params.id, userId: req.userId });
     if (!event) throw new ApiError(404, 'Event not found');
     res.json(event);
   })
@@ -31,7 +34,10 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const { title, day, time, type, googleEventId, durationMinutes, autoScheduled, task } = req.body;
-    const event = await Event.create({ title, day, time, type, googleEventId, durationMinutes, autoScheduled, task });
+    const event = await Event.create({
+      userId: req.userId,
+      title, day, time, type, googleEventId, durationMinutes, autoScheduled, task
+    });
     res.status(201).json(event);
   })
 );
@@ -41,8 +47,8 @@ router.put(
   '/:id',
   asyncHandler(async (req, res) => {
     const { title, day, time, type, googleEventId, durationMinutes, autoScheduled, task } = req.body;
-    const event = await Event.findByIdAndUpdate(
-      req.params.id,
+    const event = await Event.findOneAndUpdate(
+      { _id: req.params.id, userId: req.userId },
       { title, day, time, type, googleEventId, durationMinutes, autoScheduled, task },
       { new: true, runValidators: true, omitUndefined: true }
     );
@@ -58,7 +64,7 @@ router.put(
 router.delete(
   '/by-task/:taskId',
   asyncHandler(async (req, res) => {
-    const result = await Event.deleteMany({ task: req.params.taskId, autoScheduled: true });
+    const result = await Event.deleteMany({ task: req.params.taskId, userId: req.userId, autoScheduled: true });
     res.json({ success: true, deleted: result.deletedCount });
   })
 );
@@ -72,7 +78,7 @@ router.delete(
 router.delete(
   '/auto-scheduled',
   asyncHandler(async (req, res) => {
-    const result = await Event.deleteMany({ autoScheduled: true });
+    const result = await Event.deleteMany({ userId: req.userId, autoScheduled: true });
     res.json({ success: true, deleted: result.deletedCount });
   })
 );
@@ -84,7 +90,7 @@ router.delete(
 router.delete(
   '/:id',
   asyncHandler(async (req, res) => {
-    const event = await Event.findByIdAndDelete(req.params.id);
+    const event = await Event.findOneAndDelete({ _id: req.params.id, userId: req.userId });
     if (!event) throw new ApiError(404, 'Event not found');
     res.json({ success: true, deletedId: req.params.id });
   })

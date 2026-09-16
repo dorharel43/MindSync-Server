@@ -9,7 +9,12 @@ const ApiError = require('./middleware/ApiError');
 // ==========================================
 // Startup env validation - fail fast and loud
 // ==========================================
-const REQUIRED_ENV_VARS = ['MONGO_URI'];
+// AUTH: JWT_SECRET added - without it every token issued/verified in
+// routes/auth.js and middleware/auth.js would be signed with `undefined`,
+// which "works" until the process restarts with a different `undefined`...
+// except it's always the same undefined, so it would actually silently work
+// and be a real, unrotatable secret nobody chose. Fail loudly instead.
+const REQUIRED_ENV_VARS = ['MONGO_URI', 'JWT_SECRET'];
 const missingEnvVars = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
 if (missingEnvVars.length > 0) {
   console.error(`❌ Missing required environment variable(s): ${missingEnvVars.join(', ')}`);
@@ -51,6 +56,18 @@ app.use(
 );
 app.use(express.json({ limit: '10mb' })); // headroom for pasted file/study-material content
 
+// TEMP DEBUG: logs every request that actually reaches Express, with how
+// long it took to respond. Remove once we've confirmed where requests are
+// getting stuck - this is diagnostic, not something to ship long-term.
+app.use((req, res, next) => {
+  const started = Date.now();
+  console.log(`→ ${req.method} ${req.originalUrl}`);
+  res.on('finish', () => {
+    console.log(`← ${req.method} ${req.originalUrl} ${res.statusCode} (${Date.now() - started}ms)`);
+  });
+  next();
+});
+
 // ==========================================
 // DB connection - with resilience for a long-running server
 // ==========================================
@@ -85,11 +102,20 @@ app.get('/', (req, res) => {
 // ==========================================
 // Routes - all pointing at routes/, none at models/
 // ==========================================
+// AUTH: /api/auth MUST be registered here, with the other routes - not
+// after notFound/errorHandler. Express matches middleware in registration
+// order, so anything after notFound() can never be reached; every request
+// to /api/auth/* would have hit the 404 handler first and never reached
+// routes/auth.js at all. Register/login would have been permanently broken.
+//
+// /api/profile is gone - name/degree moved onto User (see routes/auth.js's
+// GET/PUT /me), so there's one less singleton document and one less route
+// that needed to learn about userId.
+app.use('/api/auth', require('./routes/auth'));
 app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api/events', require('./routes/events'));
 app.use('/api/folders', require('./routes/folders'));
 app.use('/api/files', require('./routes/files'));
-app.use('/api/profile', require('./routes/profile'));
 // /api/stats was removed with XP, levels and the streak.
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/study', require('./routes/study'));

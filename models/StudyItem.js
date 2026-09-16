@@ -26,6 +26,14 @@ const reviewSchema = new mongoose.Schema({
 }, { _id: false });
 
 const studyItemSchema = new mongoose.Schema({
+    // AUTH: see Task.js for the reasoning.
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true,
+        index: true
+    },
+
     // ---- Content ----
     question: {
         type: String,
@@ -114,8 +122,10 @@ const studyItemSchema = new mongoose.Schema({
 });
 
 // Fast lookup of what's due - the single most frequent query in the app.
-studyItemSchema.index({ dueDate: 1, suspended: 1 });
-studyItemSchema.index({ category: 1 });
+// userId leads the compound index since every query is scoped to one user
+// first and foremost.
+studyItemSchema.index({ userId: 1, dueDate: 1, suspended: 1 });
+studyItemSchema.index({ userId: 1, category: 1 });
 
 studyItemSchema.virtual('isDue').get(function () {
     return !this.suspended && this.dueDate <= new Date();

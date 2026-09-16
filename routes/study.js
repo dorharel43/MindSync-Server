@@ -4,6 +4,9 @@ const StudyItem = require('../models/StudyItem');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../middleware/ApiError');
 const { schedule, calibrationReport, OUTCOME_CORRECT } = require('../utils/scheduler');
+const { requireAuth } = require('../middleware/auth');
+
+router.use(requireAuth);
 
 // Is the gap closing?
 //
@@ -84,7 +87,7 @@ router.get(
   '/due',
   asyncHandler(async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
-    const filter = { suspended: false, dueDate: { $lte: new Date() } };
+    const filter = { userId: req.userId, suspended: false, dueDate: { $lte: new Date() } };
     if (req.query.category) filter.category = req.query.category;
 
     let items = await StudyItem.find(filter).sort({ dueDate: 1 }).limit(limit * 2);
@@ -108,7 +111,7 @@ router.get(
 router.get(
   '/',
   asyncHandler(async (req, res) => {
-    const filter = {};
+    const filter = { userId: req.userId };
     if (req.query.category) filter.category = req.query.category;
     if (req.query.mode) filter.mode = req.query.mode;
 
@@ -128,7 +131,7 @@ router.get(
   '/stats',
   asyncHandler(async (req, res) => {
     const now = new Date();
-    const items = await StudyItem.find({ suspended: false });
+    const items = await StudyItem.find({ userId: req.userId, suspended: false });
 
     const dueCount = items.filter(i => i.dueDate <= now).length;
     // Count items never actually seen, not items whose streak was reset.
@@ -268,7 +271,7 @@ router.get(
 router.get(
   '/categories',
   asyncHandler(async (req, res) => {
-    const categories = await StudyItem.distinct('category', { category: { $ne: '' } });
+    const categories = await StudyItem.distinct('category', { userId: req.userId, category: { $ne: '' } });
     res.json(categories.sort());
   })
 );
@@ -278,7 +281,7 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const { question, answer, mode, skillTag, category, sourceFile } = req.body;
-    const item = await StudyItem.create({ question, answer, mode, skillTag, category, sourceFile });
+    const item = await StudyItem.create({ userId: req.userId, question, answer, mode, skillTag, category, sourceFile });
     res.status(201).json(item);
   })
 );
@@ -295,6 +298,7 @@ router.post(
 
     const created = await StudyItem.insertMany(
       items.map(i => ({
+        userId: req.userId,
         question: i.question,
         answer: i.answer || '',
         mode: ['recall', 'practice', 'explain'].includes(i.mode) ? i.mode : 'recall',
@@ -321,20 +325,25 @@ router.post(
     if (!Array.isArray(ids) || ids.length === 0) {
       throw new ApiError(400, 'ids must be a non-empty array');
     }
-    const result = await StudyItem.deleteMany({ _id: { $in: ids } });
+    // BUG FIX: scoped by userId too. Without it, sending someone else's
+    // (guessed or leaked) item ids in this array would delete their
+    // questions, not just your own.
+    const result = await StudyItem.deleteMany({ _id: { $in: ids }, userId: req.userId });
     res.json({ success: true, deleted: result.deletedCount });
   })
 );
 
 // DELETE /api/study/all/everything
-// Wipes the whole deck. Declared before '/:id' so "all" isn't read as an id.
+// Wipes the CALLER's deck. Declared before '/:id' so "all" isn't read as an id.
 // The UI deliberately gates this behind a typed confirmation - it destroys
 // every question AND all the review history behind them, which is the part
 // that can't be regenerated.
 router.delete(
   '/all/everything',
   asyncHandler(async (req, res) => {
-    const result = await StudyItem.deleteMany({});
+    // BUG FIX: this used to be deleteMany({}) with no filter - "wipe my
+    // deck" would have wiped every user's study items.
+    const result = await StudyItem.deleteMany({ userId: req.userId });
     res.json({ success: true, deleted: result.deletedCount });
   })
 );
@@ -354,7 +363,7 @@ router.post(
       throw new ApiError(400, `outcome must be one of: ${Object.keys(OUTCOME_CORRECT).join(', ')}`);
     }
 
-    const item = await StudyItem.findById(req.params.id);
+    const item = await StudyItem.findOne({ _id: req.params.id, userId: req.userId });
     if (!item) throw new ApiError(404, 'Study item not found');
 
     const next = schedule(item, outcome, confidence);
@@ -391,8 +400,8 @@ router.put(
   '/:id',
   asyncHandler(async (req, res) => {
     const { question, answer, mode, skillTag, category, suspended, mySolution, solutionSource } = req.body;
-    const item = await StudyItem.findByIdAndUpdate(
-      req.params.id,
+    const item = await StudyItem.findOneAndUpdate(
+      { _id: req.params.id, userId: req.userId },
       { question, answer, mode, skillTag, category, suspended, mySolution, solutionSource },
       { new: true, runValidators: true, omitUndefined: true }
     );
@@ -405,7 +414,7 @@ router.put(
 router.delete(
   '/:id',
   asyncHandler(async (req, res) => {
-    const item = await StudyItem.findByIdAndDelete(req.params.id);
+    const item = await StudyItem.findOneAndDelete({ _id: req.params.id, userId: req.userId });
     if (!item) throw new ApiError(404, 'Study item not found');
     res.json({ success: true, deletedId: req.params.id });
   })

@@ -17,6 +17,17 @@ const subtaskSchema = new mongoose.Schema({
 });
 
 const taskSchema = new mongoose.Schema({
+    // AUTH: every document now belongs to exactly one user. Every route that
+    // reads/writes a Task must filter/set this - see tasks.js. Without it,
+    // Task.find() returns everyone's tasks, which is the exact bug this
+    // whole change exists to close.
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true,
+        index: true
+    },
+
     title: {
         type: String,
         required: true,
@@ -78,6 +89,11 @@ const taskSchema = new mongoose.Schema({
     toJSON: { virtuals: true },
     toObject: { virtuals: true }
 });
+
+// The list view is always "my tasks, newest first" - this is the query that
+// runs on every page load, so it gets a compound index instead of relying on
+// the single-field userId index above plus a separate sort.
+taskSchema.index({ userId: 1, createdAt: -1 });
 
 // Progress is DERIVED, never stored - storing it would let it drift out of
 // sync with the actual subtasks. A task with no subtasks reports progress
