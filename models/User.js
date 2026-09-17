@@ -23,7 +23,19 @@ const userSchema = new mongoose.Schema({
         required: true,
         select: false
     },
-    name: { type: String, default: '', trim: true, maxlength: 100 },
+    // Letters only (any language), plus spaces/hyphens/apostrophes for names
+    // like "דור-אל" or "O'Brian" - no digits or symbols. The client already
+    // checks this before submitting, but that's bypassable (a direct API
+    // call skips the UI entirely), so this is the check that actually
+    // matters. Empty string is still allowed (the * rather than +) since
+    // name has no required constraint - registration can leave it blank.
+    name: {
+        type: String,
+        default: '',
+        trim: true,
+        maxlength: 100,
+        match: [/^[\p{L}\s'-]*$/u, 'Name can only contain letters (no numbers or symbols).']
+    },
     degree: { type: String, default: '', trim: true, maxlength: 100 }
 }, {
     timestamps: true
