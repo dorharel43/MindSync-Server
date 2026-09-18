@@ -18,18 +18,22 @@ router.use(requireAuth);
 // Split chronologically down the middle rather than by calendar window: a
 // student who studied hard last week and not at all this week would otherwise
 // be told their judgement collapsed, when really they just stopped answering.
-function sureTrend(reviews) {
+//
+// Generalised to any confidence level, not just 'sure' - "is your gut sense
+// in the ambiguous middle (think_so) getting more trustworthy?" is the same
+// question, just asked of a different bucket.
+function confidenceTrend(reviews, confidenceLevel) {
   const MIN_PER_HALF = 5;
-  const sure = reviews
-    .filter(r => r.confidence === 'sure')
+  const filtered = reviews
+    .filter(r => r.confidence === confidenceLevel)
     .sort((a, b) => new Date(a.reviewedAt) - new Date(b.reviewedAt));
 
-  if (sure.length < MIN_PER_HALF * 2) return null;
+  if (filtered.length < MIN_PER_HALF * 2) return null;
 
-  const half = Math.floor(sure.length / 2);
+  const half = Math.floor(filtered.length / 2);
   const pct = list => Math.round((list.filter(r => r.wasCorrect).length / list.length) * 100);
-  const earlier = sure.slice(0, half);
-  const recent = sure.slice(half);
+  const earlier = filtered.slice(0, half);
+  const recent = filtered.slice(half);
 
   return {
     earlier: pct(earlier), earlierCount: earlier.length,
@@ -79,6 +83,81 @@ function pacePattern(reviews) {
     fastAccuracy: pct(fast), fastSeconds, fastCount: fast.length,
     slowAccuracy: pct(slow), slowSeconds, slowCount: slow.length
   };
+}
+
+// The inverse of "confidently wrong": items you keep doubting yourself on
+// but actually know. "Confidently wrong" tells you where your certainty
+// lies to you; this tells you where your doubt does - both are the app
+// telling the truth about what you actually know, just in opposite
+// directions.
+//
+// Looks at each item's RECENT reviews only (not its whole history) - a
+// single early bad guess shouldn't keep an item flagged forever once the
+// student has clearly settled into knowing it.
+function findUnderconfidentItems(items) {
+  const RECENT_WINDOW = 5;
+  // Lowered from 3 - with a small/early deck, no single item accumulates 3
+  // non-sure reviews quickly, so the panel stayed empty even when the
+  // pattern genuinely existed. 2 is still a real track record (not a lucky
+  // single guess), just reachable sooner.
+  const MIN_NON_SURE_REVIEWS = 2;
+  const MIN_ACCURACY = 75;
+
+  return items
+    .map(item => {
+      const recent = (item.reviews || []).slice(-RECENT_WINDOW);
+      const nonSure = recent.filter(r => r.confidence !== 'sure');
+      if (nonSure.length < MIN_NON_SURE_REVIEWS) return null;
+
+      const correct = nonSure.filter(r => r.wasCorrect).length;
+      const accuracy = Math.round((correct / nonSure.length) * 100);
+      if (accuracy < MIN_ACCURACY) return null;
+
+      return {
+        id: item._id, question: item.question, category: item.category,
+        mode: item.mode, strength: item.strength,
+        accuracy, reviewCount: nonSure.length
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.accuracy - a.accuracy || b.reviewCount - a.reviewCount)
+    .slice(0, 60);
+}
+
+// Genuine difficulty, not a calibration problem. "Confidently wrong" is
+// about the mismatch between feeling and reality; this is about items where
+// there IS no mismatch - the student correctly recognises they don't know
+// it, repeatedly, and repeatedly they're right not to be confident. That is
+// a different problem (the material itself, not self-assessment) and
+// probably wants a different response: go back to the source, not just
+// another rep of the same question.
+//
+// Excludes anything with a recent "sure" claim - that's the mismatch case
+// above, not this one.
+function findGenuineDifficultyItems(items) {
+  const RECENT_WINDOW = 3;
+  const MIN_REVIEWS = 2;
+  const MAX_ACCURACY = 30;
+
+  return items
+    .map(item => {
+      const recent = (item.reviews || []).slice(-RECENT_WINDOW);
+      if (recent.length < MIN_REVIEWS) return null;
+      if (recent.some(r => r.confidence === 'sure')) return null;
+
+      const correct = recent.filter(r => r.wasCorrect).length;
+      const accuracy = Math.round((correct / recent.length) * 100);
+      if (accuracy > MAX_ACCURACY) return null;
+
+      return {
+        id: item._id, question: item.question, category: item.category,
+        mode: item.mode, strength: item.strength,
+        accuracy, reviewCount: recent.length
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.accuracy - b.accuracy || b.reviewCount - a.reviewCount)
+    .slice(0, 60);
 }
 
 // GET /api/study/due?limit=20&category=...
@@ -258,11 +337,18 @@ router.get(
       newCount,
       reviewsAllTime: allReviews.length,
       calibration,
-      trend: sureTrend(allReviews),
+      trend: confidenceTrend(allReviews, 'sure'),
+      trendByConfidence: {
+        sure: confidenceTrend(allReviews, 'sure'),
+        think_so: confidenceTrend(allReviews, 'think_so'),
+        guessing: confidenceTrend(allReviews, 'guessing')
+      },
       pace: pacePattern(allReviews),
       subjects,
       subjectCalibration,
-      confidentlyWrong
+      confidentlyWrong,
+      underconfidentItems: findUnderconfidentItems(items),
+      genuineDifficultyItems: findGenuineDifficultyItems(items)
     });
   })
 );
