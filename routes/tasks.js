@@ -99,6 +99,9 @@ router.post(
     if (!task) throw new ApiError(404, 'Task not found');
 
     task.subtasks.push({ title: title.trim(), completed: false });
+    // BUG FIX: adding a step to a finished task left it "completed" with an
+    // unchecked step in it. A new step means there's work left - reopen.
+    task.status = 'open';
     await task.save();
     res.status(201).json(task);
   })
@@ -119,12 +122,16 @@ router.patch(
     if (req.body.completed !== undefined) subtask.completed = !!req.body.completed;
     if (req.body.title !== undefined) subtask.title = req.body.title;
 
-    // Keep the parent status honest: if every item is checked the task is
-    // done; if any item is unchecked it's back to open. This means the
-    // checklist is the single source of truth and status can't contradict it.
+    // Keep the parent status honest: ticking the last item completes the
+    // task, un-ticking an item reopens it.
+    // BUG FIX: this used to set 'open' whenever ANY item was unchecked. A
+    // task marked Done while it still had unchecked steps (the client asks
+    // first) then reopened itself the moment you ticked one more of them -
+    // ticking a step never means "I'm not done". Now only un-ticking reopens.
     if (task.subtasks.length > 0) {
       const allDone = task.subtasks.every((s) => s.completed);
-      task.status = allDone ? 'completed' : 'open';
+      if (allDone) task.status = 'completed';
+      else if (req.body.completed === false) task.status = 'open';
     }
 
     await task.save();
@@ -144,9 +151,10 @@ router.delete(
 
     subtask.deleteOne();
 
-    if (task.subtasks.length > 0) {
-      const allDone = task.subtasks.every((s) => s.completed);
-      task.status = allDone ? 'completed' : 'open';
+    // Removing the last unchecked step finishes the task. Removing a step
+    // never reopens one (same reasoning as the PATCH above).
+    if (task.subtasks.length > 0 && task.subtasks.every((s) => s.completed)) {
+      task.status = 'completed';
     }
 
     await task.save();
