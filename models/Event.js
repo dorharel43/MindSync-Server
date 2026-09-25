@@ -24,6 +24,17 @@ const eventSchema = new mongoose.Schema(
         message: '{VALUE} is not a valid day',
       },
     },
+    // One-time events carry their real date (YYYY-MM-DD, local). Events
+    // without a date repeat every week on `day` - that's how classes work.
+    // Before this field existed EVERY event repeated weekly, so an exam or
+    // "submit on 26/10" landed on this week's Monday and came back every
+    // Monday forever. `day` is still stored for one-time events too (it's
+    // the date's weekday), so older clients keep working.
+    date: {
+      type: String,
+      default: null,
+      match: [/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'],
+    },
     time: {
       type: String,
       required: [true, 'Event time is required'],

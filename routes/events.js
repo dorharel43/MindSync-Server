@@ -33,10 +33,10 @@ router.get(
 router.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { title, day, time, type, googleEventId, durationMinutes, autoScheduled, task } = req.body;
+    const { title, day, date, time, type, googleEventId, durationMinutes, autoScheduled, task } = req.body;
     const event = await Event.create({
       userId: req.userId,
-      title, day, time, type, googleEventId, durationMinutes, autoScheduled, task
+      title, day, date, time, type, googleEventId, durationMinutes, autoScheduled, task
     });
     res.status(201).json(event);
   })
@@ -46,10 +46,10 @@ router.post(
 router.put(
   '/:id',
   asyncHandler(async (req, res) => {
-    const { title, day, time, type, googleEventId, durationMinutes, autoScheduled, task } = req.body;
+    const { title, day, date, time, type, googleEventId, durationMinutes, autoScheduled, task } = req.body;
     const event = await Event.findOneAndUpdate(
       { _id: req.params.id, userId: req.userId },
-      { title, day, time, type, googleEventId, durationMinutes, autoScheduled, task },
+      { title, day, date, time, type, googleEventId, durationMinutes, autoScheduled, task },
       { new: true, runValidators: true, omitUndefined: true }
     );
     if (!event) throw new ApiError(404, 'Event not found');
