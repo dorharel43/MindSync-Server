@@ -289,7 +289,7 @@ router.get(
         // that subject instead of an average across courses the student is
         // not studying tonight.
         calibration: calibrationReport(v.reviewList),
-        trend: sureTrend(v.reviewList),
+        trend: confidenceTrend(v.reviewList, 'sure'),
         pace: pacePattern(v.reviewList),
         lapses: v.lapses
       }))
