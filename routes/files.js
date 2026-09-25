@@ -48,10 +48,17 @@ router.post(
 router.put(
   '/:id',
   asyncHandler(async (req, res) => {
-    const { name, content, folder, sourcePath } = req.body;
+    const { name, content, folder, sourcePath, summary } = req.body;
+    const update = { name, content, folder, sourcePath };
+    // Stamp the time only when a summary is actually being written, so the
+    // client can show "saved <date>" - renaming a file shouldn't touch it.
+    if (summary !== undefined) {
+      update.summary = summary;
+      update.summaryUpdatedAt = new Date();
+    }
     const file = await FileItem.findOneAndUpdate(
       { _id: req.params.id, userId: req.userId },
-      { name, content, folder, sourcePath },
+      update,
       { new: true, runValidators: true, omitUndefined: true }
     );
     if (!file) throw new ApiError(404, 'File not found');

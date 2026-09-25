@@ -35,6 +35,18 @@ const fileItemSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
+    // The AI summary of this file, saved so it survives closing the window.
+    // It used to live only in the modal and was lost the moment it closed,
+    // which meant paying for (and waiting on) the same summary every time.
+    summary: {
+      type: String,
+      default: '',
+      maxlength: [60000, 'Summary is too long'],
+    },
+    summaryUpdatedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );
