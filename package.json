@@ -30,8 +30,11 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "googleapis": "^182.0.0",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.9.4"
+    "katex": "^0.18.9",
+    "mongoose": "^9.9.4",
+    "pdfjs-dist": "^3.11.174"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

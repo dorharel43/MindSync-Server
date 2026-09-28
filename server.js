@@ -89,6 +89,20 @@ mongoose.connection.on('disconnected', () => console.warn('⚠️  MongoDB disco
 mongoose.connection.on('reconnected', () => console.log('✅ MongoDB reconnected.'));
 
 // ==========================================
+// Web app (browser version) - served from web/ at /app/
+// ==========================================
+// A browser opening the bare address lands on the app; API clients (the
+// desktop app's health check) still get the JSON below.
+const path = require('path');
+app.get('/', (req, res, next) => {
+  if ((req.headers.accept || '').includes('text/html')) return res.redirect('/app/');
+  next();
+});
+app.use('/app', express.static(path.join(__dirname, 'web'), { extensions: ['html'] }));
+// KaTeX (formulas in summaries) straight from node_modules.
+app.use('/app/vendor/katex', express.static(path.join(path.dirname(require.resolve('katex/package.json')), 'dist')));
+
+// ==========================================
 // Health check
 // ==========================================
 app.get('/', (req, res) => {
@@ -120,6 +134,9 @@ app.use('/api/files', require('./routes/files'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/study', require('./routes/study'));
 app.use('/api/admin', require('./routes/admin'));
+// Web version: the app's logic (AI, parsing, planner...) and file uploads.
+app.use('/api/rpc', require('./rpc'));
+app.use('/api/uploads', require('./rpc/uploads'));
 
 // ==========================================
 // Error handling - must be registered last, in this order
