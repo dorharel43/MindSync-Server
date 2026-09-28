@@ -1,6 +1,6 @@
 // Spaced repetition scheduling, adapted from SM-2.
 //
-// Two deliberate departures from textbook SM-2:
+// Three deliberate departures from textbook SM-2:
 //
 // 1. The grade is derived from BOTH the outcome and the stated confidence.
 //    Getting something right while guessing is not the same as getting it
@@ -8,6 +8,12 @@
 //
 // 2. 'practice' items are scheduled more conservatively. A maths skill you
 //    solved once is not learned; procedural skills need more contact.
+//
+// 3. Exams. SM-2 has no deadline: an item answered right three times comes
+//    back in 15 days, then 37. With the course's exam in three weeks it would
+//    never be seen again before the exam. When the caller passes
+//    daysUntilExam, the next review is never later than the day before the
+//    exam (see utils/examSchedule.js for how the exam is found).
 
 const OUTCOME_CORRECT = {
     got_it: true, partial: false, missed: false,
@@ -32,7 +38,10 @@ function gradeFrom(outcome, confidence) {
     return confidence === 'sure' ? 0 : 1;
 }
 
-function schedule(item, outcome, confidence) {
+// options.daysUntilExam: whole days from today to the course's next exam
+// (0 = today), or null/undefined when there is none. options.examDate: that
+// exam's date (YYYY-MM-DD).
+function schedule(item, outcome, confidence, options = {}) {
     const grade = gradeFrom(outcome, confidence);
 
     let { interval = 0, ease = 2.5, repetitions = 0, lapses = 0 } = item;
@@ -64,15 +73,31 @@ function schedule(item, outcome, confidence) {
 
     interval = Math.min(interval, 120);
 
-    const dueDate = new Date();
-    if (interval === 0) {
+    // Not past the exam: at the latest, the day before it. With the exam
+    // today or tomorrow there's nothing to protect - the normal interval
+    // stands (it lands after the exam, where it belongs).
+    let cappedForExam = false;
+    const daysUntilExam = options.daysUntilExam;
+    if (Number.isInteger(daysUntilExam) && daysUntilExam >= 2 && interval > daysUntilExam - 1) {
+        interval = daysUntilExam - 1;
+        cappedForExam = true;
+    }
+
+    let dueDate = new Date();
+    if (cappedForExam && /^\d{4}-\d{2}-\d{2}$/.test(options.examDate || '')) {
+        // Exactly the day before the exam, from the exam's own calendar
+        // date - not "now + N days", which is off by one between midnight
+        // and 03:00 Israel time (the server runs in UTC).
+        const [y, m, d] = options.examDate.split('-').map(Number);
+        dueDate = new Date(Date.UTC(y, m - 1, d - 1, 4, 0, 0));
+    } else if (interval === 0) {
         dueDate.setMinutes(dueDate.getMinutes() + 10);  // same-session retry
     } else {
         dueDate.setDate(dueDate.getDate() + interval);
         dueDate.setHours(4, 0, 0, 0);
     }
 
-    return { interval, ease, repetitions, lapses, dueDate, grade };
+    return { interval, ease, repetitions, lapses, dueDate, grade, cappedForExam };
 }
 
 // Calibration: how well does stated confidence predict actual correctness?

@@ -1,12 +1,30 @@
 const express = require('express');
 const router = express.Router();
 const StudyItem = require('../models/StudyItem');
+const Event = require('../models/Event');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../middleware/ApiError');
 const { schedule, calibrationReport, OUTCOME_CORRECT } = require('../utils/scheduler');
+const { todayIso, nextExamByCourse, buildStudyQueue } = require('../utils/examSchedule');
 const { requireAuth } = require('../middleware/auth');
 
 router.use(requireAuth);
+
+// The user's upcoming exams (Planner events of type 'exam' with a date), and
+// which course each belongs to - see utils/examSchedule.js. An exam lookup
+// failing must never block studying, so it falls back to "no exams".
+async function examsForCourses(userId, courses) {
+  try {
+    const today = todayIso();
+    const exams = await Event.find({ userId, type: 'exam', date: { $gte: today } }).select('title date').lean();
+    return nextExamByCourse(courses, exams, today);
+  } catch (err) {
+    console.warn('study: exam lookup failed, scheduling without exams:', err.message);
+    return {};
+  }
+}
+
+const courseOf = (item) => (item.category || '').trim() || 'Uncategorized';
 
 // Is the gap closing?
 //
@@ -161,28 +179,24 @@ function findGenuineDifficultyItems(items) {
 }
 
 // GET /api/study/due?limit=20&category=...
-// The study session queue. Ordered so the most overdue comes first.
+// The study session queue.
+//
+// CHANGED (exam-aware): it used to be "everything whose dueDate has passed,
+// most overdue first". Now (utils/examSchedule.js):
+//   - the course with the nearest exam comes first,
+//   - a question scheduled for after its course's exam counts as due the day
+//     before the exam,
+//   - new (never answered) questions come in at a daily pace instead of all
+//     at once - 40 fresh questions from one file used to be "40 due today".
 router.get(
   '/due',
   asyncHandler(async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
-    const filter = { userId: req.userId, suspended: false, dueDate: { $lte: new Date() } };
-    if (req.query.category) filter.category = req.query.category;
-
-    let items = await StudyItem.find(filter).sort({ dueDate: 1 }).limit(limit * 2);
-
-    // For practice items, only surface ONE per skillTag per session. Drilling
-    // five near-identical integrals back to back teaches the specific
-    // answers, not the skill.
-    const seenSkills = new Set();
-    items = items.filter(item => {
-      if (item.mode !== 'practice' || !item.skillTag) return true;
-      if (seenSkills.has(item.skillTag)) return false;
-      seenSkills.add(item.skillTag);
-      return true;
-    }).slice(0, limit);
-
-    res.json(items);
+    const items = await StudyItem.find({ userId: req.userId, suspended: false });
+    const courses = [...new Set(items.map(courseOf))];
+    const exams = await examsForCourses(req.userId, courses);
+    const { queue } = buildStudyQueue(items, exams, new Date(), { limit, category: req.query.category || null });
+    res.json(queue);
   })
 );
 
@@ -212,7 +226,12 @@ router.get(
     const now = new Date();
     const items = await StudyItem.find({ userId: req.userId, suspended: false });
 
-    const dueCount = items.filter(i => i.dueDate <= now).length;
+    // Same logic as the session queue (/due), so the number on the screen is
+    // the number of questions a session will actually go through.
+    const courses = [...new Set(items.map(courseOf))];
+    const exams = await examsForCourses(req.userId, courses);
+    const plan = buildStudyQueue(items, exams, now, { limit: Number.MAX_SAFE_INTEGER });
+    const dueCount = plan.total;
     // Count items never actually seen, not items whose streak was reset.
     // SM-2 sets repetitions back to 0 on a failure, so counting that field
     // made a question you got wrong reappear as "never reviewed" - which is
@@ -237,16 +256,13 @@ router.get(
     // which in a product about telling the truth is a number that lies.
     const byCategory = {};
     items.forEach(item => {
-      const key = (item.category || '').trim() || 'Uncategorized';
+      const key = courseOf(item);
       if (!byCategory[key]) {
-        byCategory[key] = { items: 0, reviews: 0, correct: 0, sureReviews: 0, sureCorrect: 0, lapses: 0, due: 0, neverReviewed: 0, reviewList: [] };
+        byCategory[key] = { items: 0, reviews: 0, correct: 0, sureReviews: 0, sureCorrect: 0, lapses: 0, neverReviewed: 0, reviewList: [] };
       }
       const b = byCategory[key];
       b.items += 1;
       b.lapses += item.lapses;
-      // Per-subject workload, so the client can show what each course costs
-      // tonight without fetching the whole deck.
-      if (item.dueDate <= now) b.due += 1;
       if (!item.reviews || item.reviews.length === 0) b.neverReviewed += 1;
       (item.reviews || []).forEach(r => {
         b.reviews += 1;
@@ -304,16 +320,24 @@ router.get(
       });
 
     // One row per subject, so the study screen can offer a course at a time.
-    // Sorted by what is actually waiting rather than alphabetically: the
-    // subject with thirty questions due is the one the student came for.
+    // Nearest exam first, then by what is actually waiting.
     const subjects = Object.entries(byCategory)
-      .map(([name, v]) => ({
-        category: name,
-        items: v.items,
-        due: v.due,
-        neverReviewed: v.neverReviewed
-      }))
-      .sort((a, b) => b.due - a.due || b.items - a.items || a.category.localeCompare(b.category));
+      .map(([name, v]) => {
+        const c = plan.byCourse[name] || { dueReviews: 0, newToday: 0, unseen: 0, exam: null };
+        return {
+          category: name,
+          items: v.items,
+          due: c.dueReviews + c.newToday,
+          dueReviews: c.dueReviews,
+          newToday: c.newToday,
+          neverReviewed: v.neverReviewed,
+          // { title, date: 'YYYY-MM-DD', daysLeft } or null
+          exam: c.exam || null
+        };
+      })
+      .sort((a, b) =>
+        (a.exam ? a.exam.daysLeft : Infinity) - (b.exam ? b.exam.daysLeft : Infinity)
+        || b.due - a.due || b.items - a.items || a.category.localeCompare(b.category));
 
     // Confidently wrong: the single most useful list in the app. These are
     // the things you believe you know and don't.
@@ -452,7 +476,10 @@ router.post(
     const item = await StudyItem.findOne({ _id: req.params.id, userId: req.userId });
     if (!item) throw new ApiError(404, 'Study item not found');
 
-    const next = schedule(item, outcome, confidence);
+    // The course's next exam caps how far away the next review can be.
+    const course = courseOf(item);
+    const exam = (await examsForCourses(req.userId, [course]))[course] || null;
+    const next = schedule(item, outcome, confidence, exam ? { daysUntilExam: exam.daysLeft, examDate: exam.date } : {});
 
     item.reviews.push({
       confidence,
@@ -474,6 +501,9 @@ router.post(
       item,
       grade: next.grade,
       nextInterval: next.interval,
+      // Set when the exam shortened the gap, so the client could say
+      // "back before your exam on 1/12" instead of a bare interval.
+      cappedForExam: next.cappedForExam ? { title: exam.title, date: exam.date } : null,
       // Surfaced immediately so the moment of realisation happens right
       // then, not buried in a stats screen later.
       wasOverconfident: confidence === 'sure' && !OUTCOME_CORRECT[outcome]
