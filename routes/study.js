@@ -178,7 +178,7 @@ function findGenuineDifficultyItems(items) {
     .slice(0, 60);
 }
 
-// GET /api/study/due?limit=20&category=...
+// GET /api/study/due?limit=20&category=...&sourceFile=...&all=1
 // The study session queue.
 //
 // CHANGED (exam-aware): it used to be "everything whose dueDate has passed,
@@ -192,10 +192,26 @@ router.get(
   '/due',
   asyncHandler(async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
-    const items = await StudyItem.find({ userId: req.userId, suspended: false });
+    const category = req.query.category || null;
+    let items = await StudyItem.find({ userId: req.userId, suspended: false });
+    // ?sourceFile=... : only the questions made from that one file.
+    if (req.query.sourceFile) items = items.filter(i => (i.sourceFile || '') === req.query.sourceFile);
+
+    // ?all=1 - "Practice anyway": everything in the chosen course/file, not
+    // only what is due. For the night before an exam, when the schedule says
+    // "nothing yet" but the student wants to go over it all. Due soonest
+    // first (closest to being forgotten), never-answered ones after.
+    if (req.query.all) {
+        const inScope = category ? items.filter(i => courseOf(i) === category || (i.category || '') === category) : items;
+        const isNew = (i) => !(i.reviews && i.reviews.length);
+        const time = (d) => (d ? new Date(d).getTime() : 0);
+        inScope.sort((a, b) => (isNew(a) - isNew(b)) || time(a.dueDate) - time(b.dueDate) || time(a.createdAt) - time(b.createdAt));
+        return res.json(inScope.slice(0, limit));
+    }
+
     const courses = [...new Set(items.map(courseOf))];
     const exams = await examsForCourses(req.userId, courses);
-    const { queue } = buildStudyQueue(items, exams, new Date(), { limit, category: req.query.category || null });
+    const { queue } = buildStudyQueue(items, exams, new Date(), { limit, category });
     res.json(queue);
   })
 );
