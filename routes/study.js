@@ -481,7 +481,8 @@ router.post(
   asyncHandler(async (req, res) => {
     const { confidence, outcome, secondsSpent } = req.body;
 
-    const VALID_CONFIDENCE = ['sure', 'think_so', 'guessing'];
+    // dont_know: the "I don't know" button - always saved as missed/wrong.
+    const VALID_CONFIDENCE = ['sure', 'think_so', 'guessing', 'dont_know'];
     if (!VALID_CONFIDENCE.includes(confidence)) {
       throw new ApiError(400, `confidence must be one of: ${VALID_CONFIDENCE.join(', ')}`);
     }

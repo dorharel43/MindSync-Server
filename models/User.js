@@ -36,7 +36,12 @@ const userSchema = new mongoose.Schema({
         maxlength: 100,
         match: [/^[\p{L}\s'-]*$/u, 'Name can only contain letters (no numbers or symbols).']
     },
-    degree: { type: String, default: '', trim: true, maxlength: 100 }
+    degree: { type: String, default: '', trim: true, maxlength: 100 },
+    // The Home "Getting started" guide was finished or hidden (30/9). Kept
+    // here, not in the browser: the guide's steps are worked out from what
+    // exists now ("any questions?"), so deleting every question made it
+    // come back - and a new phone/browser would show it again too.
+    guideDone: { type: Boolean, default: false }
 }, {
     timestamps: true
 });

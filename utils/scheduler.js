@@ -47,7 +47,14 @@ function schedule(item, outcome, confidence, options = {}) {
     let { interval = 0, ease = 2.5, repetitions = 0, lapses = 0 } = item;
     const isPractice = item.mode === 'practice';
 
-    if (grade < 3) {
+    // Right while guessing is luck, not knowledge (30/9): no evidence either
+    // way. Back tomorrow to check; nothing advances (no repetition, no ease
+    // change), so a string of lucky guesses can't push it out to weeks.
+    const luckyGuess = confidence === 'guessing' && OUTCOME_CORRECT[outcome] === true;
+
+    if (luckyGuess) {
+        interval = 1;
+    } else if (grade < 3) {
         repetitions = 0;
         lapses += 1;
         interval = grade === 0 ? 0 : 1;   // 0 = same session
@@ -65,7 +72,7 @@ function schedule(item, outcome, confidence, options = {}) {
         if (isPractice) interval = Math.max(1, Math.round(interval * 0.7));
     }
 
-    ease = ease + (0.1 - (5 - grade) * (0.08 + (5 - grade) * 0.02));
+    if (!luckyGuess) ease = ease + (0.1 - (5 - grade) * (0.08 + (5 - grade) * 0.02));
     ease = Math.max(1.3, Math.min(3.0, ease));
 
     // An item that keeps being forgotten shouldn't keep getting long gaps.
