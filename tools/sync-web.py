@@ -27,7 +27,7 @@ SRC = SERVER / 'web-src'
 
 COPY = [
     'index.html', 'summary.html',
-    'renderer.js', 'summary.js', 'ui.js', 'icons.js',
+    'renderer.js', 'summary.js', 'ui.js', 'icons.js', 'i18n.js', 'i18n-he.js',
     'tokens.css', 'themes.css', 'ui-kit.css', 'styles.css', 'design.css',
 ]
 OPTIONAL = ['assets', 'icon.png', 'favicon.ico']

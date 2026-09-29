@@ -106,6 +106,14 @@ app.get('/', (req, res, next) => {
   res.redirect('/app/');
 });
 const PRIVACY_UPDATED = '29 September 2026';
+// The owner's beta numbers (30/9). The page itself is public but empty - the
+// data behind it (/api/admin/beta) is only for the emails in ADMIN_EMAILS.
+app.get('/admin', (req, res, next) => {
+  const page = path.join(WEB_DIR, 'admin.html');
+  if (fs.existsSync(page)) return res.sendFile(page);
+  next();
+});
+
 app.get('/privacy', (req, res, next) => {
   fs.readFile(path.join(WEB_DIR, 'privacy.html'), 'utf8', (err, html) => {
     if (err) return next();

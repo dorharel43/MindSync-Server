@@ -112,6 +112,32 @@ function pacePattern(reviews) {
 // Looks at each item's RECENT reviews only (not its whole history) - a
 // single early bad guess shouldn't keep an item flagged forever once the
 // student has clearly settled into knowing it.
+// Exam readiness (30/9): where each question stands, by its LAST answer.
+//   known     - right, and you said "I'm sure" / "I think so"
+//   shaky     - right while guessing (luck, not knowledge), or partly right
+//   notKnown  - wrong, missed, or "I don't know"
+//   unseen    - never practiced
+//   sureWrong - of notKnown: you said "I'm sure" (the dangerous ones)
+// The last answer, not an average: someone who got it wrong twice and has
+// known it since, knows it.
+function readinessOf(items) {
+  const r = { total: items.length, known: 0, shaky: 0, notKnown: 0, unseen: 0, sureWrong: 0 };
+  items.forEach(item => {
+    const reviews = item.reviews || [];
+    const last = reviews[reviews.length - 1];
+    if (!last) { r.unseen += 1; return; }
+    const partial = last.outcome === 'partial' || last.outcome === 'stuck';
+    if (last.wasCorrect && (last.confidence === 'sure' || last.confidence === 'think_so')) r.known += 1;
+    else if (last.wasCorrect || partial) r.shaky += 1;
+    else {
+      r.notKnown += 1;
+      if (last.confidence === 'sure') r.sureWrong += 1;
+    }
+  });
+  r.percent = r.total ? Math.round((r.known / r.total) * 100) : 0;
+  return r;
+}
+
 function findUnderconfidentItems(items) {
   const RECENT_WINDOW = 5;
   // Lowered from 3 - with a small/early deck, no single item accumulates 3
@@ -343,6 +369,7 @@ router.get(
         return {
           category: name,
           items: v.items,
+          readiness: readinessOf(items.filter(i => courseOf(i) === name)),
           due: c.dueReviews + c.newToday,
           dueReviews: c.dueReviews,
           newToday: c.newToday,

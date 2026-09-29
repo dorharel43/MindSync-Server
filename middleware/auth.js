@@ -41,8 +41,25 @@ function requireAuth(req, res, next) {
     userStillExists(payload.sub).then(ok => {
         if (!ok) return next(new ApiError(401, 'This account no longer exists.'));
         req.userId = payload.sub;
+        markActive(payload.sub);
         next();
     }, next);
+}
+
+// "Used the app today" - one database write per user per day at most; the
+// rest are answered from memory. Never holds up or fails a request.
+const markedToday = new Set();
+let markedDay = '';
+function markActive(userId) {
+    const { todayIso } = require('../utils/examSchedule');
+    const day = todayIso();
+    if (day !== markedDay) { markedToday.clear(); markedDay = day; }
+    const key = String(userId);
+    if (markedToday.has(key)) return;
+    markedToday.add(key);
+    require('../models/ActiveDay')
+        .updateOne({ userId: key, day }, { $setOnInsert: { userId: key, day } }, { upsert: true })
+        .catch(err => { markedToday.delete(key); console.warn('ActiveDay not saved:', err.message); });
 }
 
 // "Does this user exist?" asked on every request - so the answer is cached
