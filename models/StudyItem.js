@@ -7,7 +7,7 @@ const reviewSchema = new mongoose.Schema({
     // What the user claimed BEFORE seeing the answer.
     confidence: {
         type: String,
-        enum: ['sure', 'think_so', 'guessing'],
+        enum: ['sure', 'think_so', 'guessing', 'dont_know'],
         required: true
     },
     // What actually happened AFTER.
