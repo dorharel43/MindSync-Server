@@ -35,6 +35,15 @@ const eventSchema = new mongoose.Schema(
       default: null,
       match: [/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'],
     },
+    // Weekly events only: the last day it repeats (YYYY-MM-DD, inclusive).
+    // null = every week with no end. Without it, a class imported from a
+    // syllabus kept filling the board (and Google Calendar) long after the
+    // semester ended. Ignored on one-time events.
+    until: {
+      type: String,
+      default: null,
+      match: [/^\d{4}-\d{2}-\d{2}$/, 'Until must be YYYY-MM-DD'],
+    },
     time: {
       type: String,
       required: [true, 'Event time is required'],

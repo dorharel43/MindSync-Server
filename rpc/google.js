@@ -257,8 +257,17 @@ function toGoogleEvent(evt, now = new Date()) {
         description: 'Created via MindSync',
         start: { dateTime: addMinutes(dateIso, time, 0), timeZone: TIMEZONE },
         end: { dateTime: addMinutes(dateIso, time, duration), timeZone: TIMEZONE },
-        ...(weekly ? { recurrence: ['RRULE:FREQ=WEEKLY'] } : {})
+        ...(weekly ? { recurrence: [weeklyRule(evt.until)] } : {})
     };
+}
+
+// Weekly, optionally ending on `until` (YYYY-MM-DD, inclusive). RFC 5545
+// wants UNTIL in UTC when the start has a time zone; end of that day in UTC
+// is after any class on it, and the next occurrence is a week later.
+function weeklyRule(until) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(until || '')
+        ? `RRULE:FREQ=WEEKLY;UNTIL=${until.replace(/-/g, '')}T235959Z`
+        : 'RRULE:FREQ=WEEKLY';
 }
 
 // ---- used by the app logic (same interface as the desktop functions) -----
