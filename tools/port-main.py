@@ -145,3 +145,24 @@ for bad in [r"require\('electron'\)", r"\bdialog\.\w+\(", r"\bfs\.\w+Sync\(", r"
 
 open('rpc/handlers.js', 'w', encoding='utf-8').write(s)
 print('rpc/handlers.js written:', len(s.splitlines()), 'lines')
+
+# ---- rpc/apiClient.js from the desktop apiClient.js (30/9) ----------------
+# Was a hand-made copy, and drifted: "Practice anyway" and "By file" in Study
+# sent ?all / ?sourceFile from the desktop copy only, so on the web they came
+# back empty. Now generated too - only the header and the server address
+# differ (the web logic calls the server's own routes over localhost).
+import os
+api_src = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), 'apiClient.js')
+a = open(api_src, encoding='utf-8').read().replace('\r\n', '\n')
+old_url = "const SERVER_URL = process.env.MINDSYNC_SERVER_URL || 'https://mindsync-server-gags.onrender.com/api';"
+assert a.count(old_url) == 1, 'apiClient.js: SERVER_URL line not found'
+a = a.replace(old_url, """// SERVER VERSION (rpc/): the web app's logic runs inside the server, and
+// calls the server's own REST routes over localhost with the user's token -
+// so every rule in routes/ (validation, per-user isolation) still applies,
+// and nothing is written twice.
+const SERVER_URL = process.env.INTERNAL_API_URL || `http://127.0.0.1:${process.env.PORT || 5000}/api`;""")
+assert a.startswith('// apiClient.js'), 'apiClient.js: unexpected first line'
+a = a.replace('// apiClient.js', """// rpc/apiClient.js - GENERATED from the desktop app's apiClient.js by
+// tools/port-main.py. Don't edit by hand: change apiClient.js and re-run.""", 1)
+open('rpc/apiClient.js', 'w', encoding='utf-8').write(a)
+print('rpc/apiClient.js written from', api_src)

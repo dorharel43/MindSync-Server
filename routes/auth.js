@@ -134,7 +134,7 @@ router.delete(
             console.warn('⚠️ Delete account: Google disconnect failed:', err.message);
         }
         await require('../rpc/storage').removeAllForUser(userId);
-        const models = ['Task', 'Event', 'Folder', 'FileItem', 'StudyItem', 'AiUsage', 'Feedback', 'GoogleLink', 'Settings'];
+        const models = ['Task', 'Event', 'Folder', 'FileItem', 'StudyItem', 'AiUsage', 'Feedback', 'GoogleLink', 'Settings', 'ActiveDay'];
         const counts = {};
         for (const name of models) {
             const r = await require(`../models/${name}`).deleteMany({ userId });
