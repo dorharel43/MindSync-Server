@@ -95,7 +95,7 @@ npm start
      - Application home page: `https://<הדומיין>/`
      - Privacy policy: `https://<הדומיין>/privacy`
      - Authorized domains: `<הדומיין>` (בלי https)
-   - **Audience:** User type = **External**. בינתיים נשאר ב-**Testing**. תחת **Test users** מוסיפים את המיילים של מי שבודק (עד 100).
+   - **Audience:** User type = **External**. אצלך הפרויקט כבר ב-**In production**, ולכן לא צריך Test users.
    - **Data access** → Add or remove scopes → מוסיפים:
      - `.../auth/calendar.app.created`
      - `openid`
@@ -108,29 +108,30 @@ npm start
 
 > זה **client נפרד** מזה של הדסקטופ (ה-`credentials.json` מסוג Desktop app). את הישן לא נוגעים.
 
-### מה המשמעות של מצב Testing
-- רק משתמשים שהוספת ל-**Test users** יכולים לחבר את היומן. אחרים יקבלו מגוגל "Access blocked".
-- גוגל מבטלת את החיבור **כל 7 ימים**. האפליקציה מזהה את זה ומציגה "MindSync lost access to your Google Calendar – reconnect it in Settings", והמשתמש לוחץ Connect שוב.
-- לבטא קטנה של חברים זה מספיק. לפרסום פתוח בפייסבוק צריך את שלב 4.
+### מה כבר נעשה (29/9)
+- **Calendar API:** היה מופעל כבר (פרויקט `new-project-a19ab`, אותו פרויקט של הדסקטופ).
+- **Client "MindSync Web"** מסוג Web application נוצר, עם שתי כתובות redirect:
+  - `https://mindsync-server-gags.onrender.com/api/google/callback`
+  - `http://localhost:5000/api/google/callback`
+- **Data access:** נוספו `calendar.app.created`, `openid` ו-`userinfo.email`.
+- **Client ID ו-Secret** נמסרו לך בצ'אט. הם לא נשמרים בריפו, כי הריפו ציבורי.
 
 ---
 
-## 4. דומיין ואימות של גוגל (לפני פרסום פתוח)
+## 4. דומיין ואימות של גוגל – כנראה לא צריך
 
-כדי שכל אחד יוכל לחבר את היומן, צריך ללחוץ **Publish app** ולעבור אימות (verification) של גוגל. בשביל זה צריך:
+✅ **עודכן 29/9 אחרי שהגדרנו את Google Cloud:**
+- במסך Data access, `calendar.app.created` הופיעה תחת **non-sensitive scopes**, וכך גם `openid` ו-`email`. זו לא הרשאה רגישה.
+- הפרויקט כבר נמצא ב-**In production** (Audience).
 
-1. **דומיין משלך** (בערך 10$ לשנה, למשל ב-Cloudflare Registrar או Namecheap). כתובת `onrender.com` לא מספיקה, כי גוגל דורשת להוכיח בעלות על הדומיין, ועל `onrender.com` אי אפשר.
-   - ב-Render: Settings → **Custom Domains** → מוסיפים את הדומיין ועושים את רשומות ה-DNS לפי ההוראות שלהם.
-   - אחרי שזה עובד, מעדכנים את `GOOGLE_REDIRECT_URI` ב-Render **וגם** ב-Google Cloud לכתובת עם הדומיין החדש.
-2. **אימות בעלות** על הדומיין ב-[Google Search Console](https://search.google.com/search-console) (רשומת TXT ב-DNS), עם אותו חשבון גוגל של הפרויקט.
-3. **Publish app** במסך Audience ← **Prepare for verification**. גוגל תבקש:
-   - **הסבר למה צריך את ההרשאה.** אפשר להדביק:
-     > MindSync is a study planner for students. When a user chooses to connect Google Calendar, MindSync creates a dedicated secondary calendar named "MindSync" and adds, updates and removes only the study events the user syncs from the app (classes, exams, study blocks). We use calendar.app.created because it is the narrowest scope for this: MindSync cannot read or change the user's other calendars.
-   - **סרטון הדגמה** (אפשר unlisted ביוטיוב, 1–2 דקות): הכתובת בשורת הדפדפן נראית → Settings → Connect → מסך ההסכמה של גוגל, **כשהשפה באנגלית ושם ההרשאה נראה** → חזרה לאפליקציה "Connected" → הוספת מבחן עם "Also add to Google Calendar" → האירוע מופיע ב-Google Calendar בלוח "MindSync".
-   - דף בית ומדיניות פרטיות על הדומיין המאומת. הם כבר קיימים ב-`/` וב-`/privacy`.
-4. זמן האימות: לרוב כמה ימי עבודה, לפעמים יותר אם גוגל שואלת שאלות. **כדאי להתחיל את זה מוקדם.**
+המשמעות:
+- כל משתמש יכול לחבר את היומן, לא רק Test users.
+- החיבור לא נופל כל 7 ימים (זה קורה רק במצב Testing).
+- לא צריך את תהליך האימות המלא של גוגל (הסבר, סרטון הדגמה, ימי המתנה).
 
-> ❓ לא בדקתי ב-100% אם גוגל מסווגת את `calendar.app.created` כ-sensitive (שדורש את התהליך למעלה) או כמשהו קל יותר. בפועל, אם במסך Data access ההרשאה מופיעה תחת "Your sensitive scopes", צריך את התהליך המלא.
+**מה עדיין כדאי, אבל לא חוסם:**
+- **דומיין משלך** (בערך 10$ לשנה). כתובת קבועה ויפה יותר מ-`onrender.com`. אם עוברים לדומיין: מוסיפים אותו ב-Render (Settings → Custom Domains), ומעדכנים את `GOOGLE_REDIRECT_URI` גם ב-Render וגם ב-Google Cloud (Clients → MindSync Web → Authorized redirect URIs).
+- **Branding בגוגל** (לוגו, קישור לדף הבית ולמדיניות הפרטיות): לא חובה כשאין הרשאות רגישות. אם מוסיפים לוגו, גוגל תבקש אימות מותג (brand verification). לכן כרגע לא נגענו בזה.
 
 ---
 
