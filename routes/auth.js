@@ -15,7 +15,7 @@ function issueToken(user) {
 // Shared shape returned after register/login and by /me, so the client
 // doesn't have to know three slightly different response formats.
 function publicUser(user) {
-    return { id: user._id, email: user.email, name: user.name, degree: user.degree };
+    return { id: user._id, email: user.email, name: user.name, degree: user.degree, guideDone: !!user.guideDone };
 }
 
 // POST /api/auth/register   { email, password, name?, degree? }
@@ -88,18 +88,21 @@ router.get(
     })
 );
 
-// PUT /api/auth/me   { name?, degree? }
+// PUT /api/auth/me   { name?, degree?, guideDone? }
 router.put(
     '/me',
     requireAuth,
     asyncHandler(async (req, res) => {
         const { name, degree } = req.body;
-        const user = await User.findByIdAndUpdate(
-            req.userId,
-            { name, degree },
-            { new: true, runValidators: true, omitUndefined: true }
-        );
+        // Only ever a real boolean - anything else is ignored.
+        const guideDone = typeof req.body.guideDone === 'boolean' ? req.body.guideDone : undefined;
+        // Load + save rather than findByIdAndUpdate: same validation, and no
+        // projection of the hidden passwordHash in the update (which some
+        // Mongo-compatible databases can't do).
+        const user = await User.findById(req.userId);
         if (!user) throw new ApiError(404, 'User not found.');
+        Object.entries({ name, degree, guideDone }).forEach(([k, v]) => { if (v !== undefined) user[k] = v; });
+        await user.save();
         res.json(publicUser(user));
     })
 );
@@ -131,7 +134,7 @@ router.delete(
             console.warn('⚠️ Delete account: Google disconnect failed:', err.message);
         }
         await require('../rpc/storage').removeAllForUser(userId);
-        const models = ['Task', 'Event', 'Folder', 'FileItem', 'StudyItem', 'AiUsage', 'Feedback', 'GoogleLink'];
+        const models = ['Task', 'Event', 'Folder', 'FileItem', 'StudyItem', 'AiUsage', 'Feedback', 'GoogleLink', 'Settings'];
         const counts = {};
         for (const name of models) {
             const r = await require(`../models/${name}`).deleteMany({ userId });

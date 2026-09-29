@@ -80,6 +80,9 @@ const taskSchema = new mongoose.Schema({
         enum: ['open', 'completed'],
         default: 'open'
     },
+    // When it was completed (30/9) - "Done this week" in Progress used
+    // updatedAt, so renaming an old finished task counted it again.
+    completedAt: { type: Date, default: null },
     subtasks: {
         type: [subtaskSchema],
         default: []
@@ -88,6 +91,14 @@ const taskSchema = new mongoose.Schema({
     timestamps: true, // יוסיף אוטומטית תאריך יצירה ותאריך עדכון
     toJSON: { virtuals: true },
     toObject: { virtuals: true }
+});
+
+// Every way a task gets completed or reopened (PUT, ticking the last step,
+// removing the last open step) goes through save(), so this is the one place.
+taskSchema.pre('save', function () {
+    if (this.isNew || this.isModified('status')) {
+        this.completedAt = this.status === 'completed' ? (this.completedAt || new Date()) : null;
+    }
 });
 
 // The list view is always "my tasks, newest first" - this is the query that
