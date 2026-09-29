@@ -47,4 +47,14 @@ router.post('/', requireAuth,
         }
     });
 
+// A file far over the limit is stopped while it's still arriving (express.raw
+// above) - same plain message as the size check in storage.save().
+// eslint-disable-next-line no-unused-vars
+router.use((err, req, res, next) => {
+    if (err && err.type === 'entity.too.large') {
+        return next(new ApiError(413, `This file is too large - the limit is ${Math.round(storage.MAX_FILE_BYTES / 1048576)}MB. Split it into smaller files.`));
+    }
+    next(err);
+});
+
 module.exports = router;

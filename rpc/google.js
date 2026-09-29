@@ -150,6 +150,8 @@ async function finishConnect(code, state) {
     });
     if (!tokens.refresh_token) throw new GoogleError('Google did not give MindSync lasting access. Please try connecting again.');
     if (tokens.scope && !/calendar/.test(tokens.scope)) {
+        // Useless without the calendar - give the access back rather than keep it.
+        await postForm(REVOKE_URL, { token: tokens.refresh_token }).catch(() => {});
         throw new GoogleError('Calendar access wasn\'t allowed. Connect again and leave the calendar box ticked.', 403, 'scope');
     }
 
@@ -161,7 +163,7 @@ async function finishConnect(code, state) {
     await GoogleLink.findOneAndUpdate(
         { userId },
         { refreshTokenEnc: encrypt(tokens.refresh_token), calendarId, email: emailFromIdToken(tokens.id_token), scope: tokens.scope || '' },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
+        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
     cacheToken(userId, tokens.access_token, tokens.expires_in);
     return { userId, returnTo };
