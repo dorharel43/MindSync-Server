@@ -1,0 +1,198 @@
+/* ==========================================================================
+   MindSync UI kit - toasts, dialogs, empty states, skeletons
+   Load AFTER tokens.css.
+   ========================================================================== */
+
+/* ---- Toasts ----------------------------------------------------------
+   Compact, bottom-right, one line of meaning. The status shows in the
+   icon's colour - no coloured stripe down the side, no emoji. */
+.ms-toast-container {
+    position: fixed;
+    bottom: var(--space-4);
+    right: var(--space-4);
+    z-index: var(--z-toast);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    pointer-events: none;
+    width: 360px;
+    max-width: calc(100vw - 32px);
+}
+[dir="rtl"] .ms-toast-container { right: auto; left: var(--space-4); }
+
+.ms-toast {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 10px 10px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    pointer-events: auto;
+    animation: ms-toast-in var(--duration-slow) var(--ease-out);
+}
+.ms-toast--leaving { animation: ms-toast-out var(--duration-base) var(--ease-in-out) forwards; }
+
+.ms-toast__icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--text-secondary);
+}
+.ms-toast--success .ms-toast__icon { color: var(--status-success); }
+.ms-toast--error   .ms-toast__icon { color: var(--status-danger); }
+.ms-toast--warning .ms-toast__icon { color: var(--status-warning); }
+.ms-toast--info    .ms-toast__icon { color: var(--status-info); }
+
+.ms-toast__body { flex: 1; min-width: 0; }
+.ms-toast__title {
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--text-primary);
+    margin-bottom: 1px;
+}
+.ms-toast__message {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.45;
+    overflow-wrap: break-word;
+}
+.ms-toast__title + .ms-toast__message { color: var(--text-secondary); }
+.ms-toast__body > .ms-toast__message:only-child { color: var(--text-primary); }
+
+.ms-toast__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.ms-toast__close:hover { color: var(--text-primary); background: var(--hover-bg); }
+
+@keyframes ms-toast-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes ms-toast-out {
+    from { opacity: 1; }
+    to   { opacity: 0; transform: translateY(4px); }
+}
+
+/* ---- Dialogs ----------------------------------------------------------- */
+.ms-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: var(--bg-overlay);
+    z-index: var(--z-modal-backdrop);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-5);
+    animation: ms-fade-in var(--duration-base) var(--ease-out);
+}
+
+.ms-modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    width: 100%;
+    max-width: 420px;
+    z-index: var(--z-modal);
+    animation: ms-modal-in var(--duration-slow) var(--ease-out);
+    overflow: hidden;
+}
+
+.ms-modal__header { padding: var(--space-5) var(--space-5) var(--space-2); }
+.ms-modal__title {
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+    color: var(--text-primary);
+    line-height: var(--leading-tight);
+}
+.ms-modal__body {
+    padding: 0 var(--space-5) var(--space-5);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: var(--leading-normal);
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+}
+/* Bodies built from markup (forms, lists) - see the note in older versions:
+   pre-wrap would turn the template's indentation into giant gaps. */
+.ms-modal__body--structured { white-space: normal; }
+
+.ms-modal__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-5);
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-card);
+}
+
+@keyframes ms-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ms-modal-in {
+    from { opacity: 0; transform: translateY(6px) scale(0.99); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* ---- Empty states ------------------------------------------------------ */
+.ms-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: var(--space-7) var(--space-5);
+    gap: 6px;
+}
+.ms-empty__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-lg);
+    background: var(--bg-subtle);
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-2);
+}
+.ms-empty__title {
+    font-size: var(--text-base);
+    font-weight: var(--font-semibold);
+    color: var(--text-primary);
+}
+.ms-empty__message {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    max-width: 360px;
+    line-height: var(--leading-normal);
+}
+.ms-empty__action { margin-top: var(--space-3); }
+
+/* ---- Skeletons ----------------------------------------------------------- */
+.ms-skeleton {
+    background: linear-gradient(90deg, var(--bg-subtle) 25%, var(--hover-bg) 50%, var(--bg-subtle) 75%);
+    background-size: 200% 100%;
+    animation: ms-shimmer 1.4s ease-in-out infinite;
+    border-radius: var(--radius-sm);
+}
+.ms-skeleton--text  { height: 12px; margin-bottom: var(--space-2); }
+.ms-skeleton--title { height: 16px; width: 40%; margin-bottom: var(--space-3); }
+.ms-skeleton--card  { height: 52px; margin-bottom: 1px; border-radius: 0; }
+
+@keyframes ms-shimmer {
+    from { background-position: 200% 0; }
+    to   { background-position: -200% 0; }
+}
+
+/* ---- RTL: chrome stays LTR, user text is dir="auto" -------------------- */
+[dir="rtl"] .sidebar { border-right: none; border-left: 1px solid var(--border-color); }
+[dir="rtl"] .ms-modal__footer { justify-content: flex-start; }

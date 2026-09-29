@@ -89,6 +89,38 @@ mongoose.connection.on('disconnected', () => console.warn('⚠️  MongoDB disco
 mongoose.connection.on('reconnected', () => console.log('✅ MongoDB reconnected.'));
 
 // ==========================================
+// Web app (browser version) - served from web/ at /app/
+// ==========================================
+// A browser opening the bare address lands on the app; API clients (the
+// desktop app's health check) still get the JSON below.
+const path = require('path');
+const fs = require('fs');
+// Public pages (Google requires both to verify the Calendar connection):
+//   /         the home page - what MindSync is, link to the app and the policy
+//   /privacy  the privacy policy; CONTACT_EMAIL fills in how to reach you
+const WEB_DIR = path.join(__dirname, 'web');
+app.get('/', (req, res, next) => {
+  if (!(req.headers.accept || '').includes('text/html')) return next(); // API clients: health JSON below
+  const home = path.join(WEB_DIR, 'home.html');
+  if (fs.existsSync(home)) return res.sendFile(home);
+  res.redirect('/app/');
+});
+const PRIVACY_UPDATED = '29 September 2026';
+app.get('/privacy', (req, res, next) => {
+  fs.readFile(path.join(WEB_DIR, 'privacy.html'), 'utf8', (err, html) => {
+    if (err) return next();
+    const email = (process.env.CONTACT_EMAIL || '').trim();
+    const contact = email
+      ? `Questions or requests about your data: <a href="mailto:${encodeURI(email)}">${email.replace(/[<>&"]/g, '')}</a>.`
+      : 'Questions or requests about your data: use Settings → Send feedback in the app.';
+    res.type('html').send(html.replace('{{CONTACT}}', contact).replace('{{UPDATED}}', PRIVACY_UPDATED));
+  });
+});
+app.use('/app', express.static(path.join(__dirname, 'web'), { extensions: ['html'] }));
+// KaTeX (formulas in summaries) straight from node_modules.
+app.use('/app/vendor/katex', express.static(path.join(path.dirname(require.resolve('katex/package.json')), 'dist')));
+
+// ==========================================
 // Health check
 // ==========================================
 app.get('/', (req, res) => {
@@ -120,6 +152,11 @@ app.use('/api/files', require('./routes/files'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/study', require('./routes/study'));
 app.use('/api/admin', require('./routes/admin'));
+// Web version: the app's logic (AI, parsing, planner...) and file uploads.
+app.use('/api/rpc', require('./rpc'));
+app.use('/api/uploads', require('./rpc/uploads'));
+app.use('/api/feedback', require('./routes/feedback'));
+app.use('/api/google', require('./routes/google'));
 
 // ==========================================
 // Error handling - must be registered last, in this order

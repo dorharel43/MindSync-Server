@@ -4,7 +4,7 @@ const router = express.Router();
 const User = require('../models/User');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../middleware/ApiError');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, forgetUser } = require('../middleware/auth');
 
 const TOKEN_TTL = '30d'; // desktop app, not a browser session - long-lived on purpose
 
@@ -101,6 +101,46 @@ router.put(
         );
         if (!user) throw new ApiError(404, 'User not found.');
         res.json(publicUser(user));
+    })
+);
+
+// DELETE /api/auth/me   { password }
+// Deletes the account and EVERYTHING that belongs to it: tasks, calendar
+// items, folders, files (and their stored copies), questions, AI usage,
+// feedback, and the Google Calendar connection (access revoked at Google).
+// The password is asked again so a session left open, or a stolen token,
+// can't delete an account.
+// Order: user data first, the User last - if something fails half way the
+// account still exists and the person can simply try again.
+router.delete(
+    '/me',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+        const { password } = req.body || {};
+        if (!password) throw new ApiError(400, 'Enter your password to delete your account.');
+        const user = await User.findById(req.userId).select('+passwordHash');
+        if (!user) throw new ApiError(404, 'User not found.');
+        // 403, not 401: a wrong password here doesn't end the session.
+        if (!(await user.checkPassword(password))) throw new ApiError(403, 'That password is not right.');
+
+        const userId = user._id;
+        // Google: revoke our access (best effort - Google being down must
+        // not keep someone's account alive). The "MindSync" calendar in
+        // their Google account is theirs; it stays.
+        try { await require('../rpc/google').disconnect(userId); } catch (err) {
+            console.warn('⚠️ Delete account: Google disconnect failed:', err.message);
+        }
+        await require('../rpc/storage').removeAllForUser(userId);
+        const models = ['Task', 'Event', 'Folder', 'FileItem', 'StudyItem', 'AiUsage', 'Feedback', 'GoogleLink'];
+        const counts = {};
+        for (const name of models) {
+            const r = await require(`../models/${name}`).deleteMany({ userId });
+            counts[name] = r.deletedCount || 0;
+        }
+        await User.deleteOne({ _id: userId });
+        forgetUser(userId);
+        console.log(`🗑️ Account deleted: ${userId} ${JSON.stringify(counts)}`);
+        res.json({ deleted: true });
     })
 );
 
