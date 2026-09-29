@@ -26,16 +26,52 @@ function requireAuth(req, res, next) {
         return next(new ApiError(500, 'Server auth is misconfigured.'));
     }
 
+    let payload;
     try {
-        const payload = jwt.verify(token, process.env.JWT_SECRET);
-        req.userId = payload.sub;
-        next();
+        payload = jwt.verify(token, process.env.JWT_SECRET);
     } catch (err) {
         const message = err.name === 'TokenExpiredError'
             ? 'Session expired. Please log in again.'
             : 'Invalid or tampered token.';
-        next(new ApiError(401, message));
+        return next(new ApiError(401, message));
     }
+    // A valid token for an account that was deleted: refused. Tokens live 30
+    // days, so without this an app left open elsewhere would keep writing
+    // data for a user who no longer exists.
+    userStillExists(payload.sub).then(ok => {
+        if (!ok) return next(new ApiError(401, 'This account no longer exists.'));
+        req.userId = payload.sub;
+        next();
+    }, next);
 }
 
-module.exports = { requireAuth };
+// "Does this user exist?" asked on every request - so the answer is cached
+// for a few minutes, and an account deleted on THIS server is forgotten at
+// once (forgetUser). One Render instance, so an in-memory cache is enough.
+const CHECK_TTL_MS = 5 * 60 * 1000;
+const checkedAt = new Map();   // userId -> when it was last found
+const deletedIds = new Set();
+async function userStillExists(userId) {
+    const id = String(userId || '');
+    if (!id || deletedIds.has(id)) return false;
+    const t = checkedAt.get(id);
+    if (t && Date.now() - t < CHECK_TTL_MS) return true;
+    let found = false;
+    try {
+        found = !!(await require('../models/User').exists({ _id: id }));
+    } catch (err) {
+        if (err.name === 'CastError') return false;   // not a valid id at all
+        throw err;                                    // the database is down: a 500, not "logged out"
+    }
+    if (found) {
+        if (checkedAt.size > 10000) checkedAt.clear();
+        checkedAt.set(id, Date.now());
+    }
+    return found;
+}
+function forgetUser(userId) {
+    checkedAt.delete(String(userId));
+    deletedIds.add(String(userId));
+}
+
+module.exports = { requireAuth, forgetUser };

@@ -170,6 +170,18 @@
         },
         // A fresh page after logging out: nothing of this account stays on
         // screen or in memory for the next person on this computer.
+        // The server asks the password again; a wrong one is a 403 (the
+        // session stays). On success the other tabs log out too, and this
+        // one goes to the home page once the "deleted" message was seen.
+        'auth-delete-account': async (password) => {
+            try {
+                await api('DELETE', '/auth/me', { password: String(password || '') }, { reloadOn401: false });
+            } catch (err) { return { error: err.message }; }
+            setToken(null);
+            if (channel) channel.postMessage('logged-out');
+            setTimeout(() => window.location.replace('/'), 2500);
+            return { success: true };
+        },
         'auth-logout': async () => {
             setToken(null);
             if (channel) channel.postMessage('logged-out');
