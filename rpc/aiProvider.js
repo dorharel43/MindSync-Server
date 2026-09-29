@@ -50,6 +50,13 @@ function activeGeminiModel(cfg) {
 function modelLabel(model) {
     const m = String(model || '');
     if (m.startsWith('ollama:')) return 'the local model';
+    // OpenRouter ids: "openai/gpt-6-luna" -> "GPT 6 Luna",
+    // "anthropic/claude-haiku-4.5" -> "Claude Haiku 4.5"
+    if (m.includes('/')) {
+        return m.split('/').pop().split(/[-:]/)
+            .map(w => /^gpt$/i.test(w) ? 'GPT' : w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ');
+    }
     return m
         .replace(/-preview$/, '')
         .split('-')
@@ -398,7 +405,10 @@ async function callGemini({ apiKey, model, parts, maxTokens = 2048, forceJson = 
 // Now: retry the same model after 2s, 5s and 12s (plus a little randomness,
 // so many clients don't all retry at the same instant). If it is still busy -
 // or out of quota, or timed out - switch to the fallback model once.
-const RETRY_DELAYS_MS = [2000, 5000, 12000];
+// AI_RETRY_SCALE: tests only (0.01 = 100x shorter waits). Unset in production.
+const RETRY_SCALE = Number(process.env.AI_RETRY_SCALE) || 1;
+const RETRY_DELAYS_MS = [2000, 5000, 12000].map(ms => ms * RETRY_SCALE);
+const FALLBACK_RETRY_MS = [3000 * RETRY_SCALE];
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function callGeminiWithRetry(opts, delays = RETRY_DELAYS_MS) {
@@ -407,7 +417,7 @@ async function callGeminiWithRetry(opts, delays = RETRY_DELAYS_MS) {
             return await callGemini(opts);
         } catch (err) {
             if (!err.retryable || attempt >= delays.length) throw err;
-            const wait = err.retryAfterMs || (delays[attempt] + Math.floor(Math.random() * 500));
+            const wait = (err.retryAfterMs ? err.retryAfterMs * RETRY_SCALE : delays[attempt]) + Math.floor(Math.random() * 500 * RETRY_SCALE);
             console.warn(`⏳ Gemini (${opts.model}) ${err.status || 'network'} - retry ${attempt + 1}/${delays.length} in ${(wait / 1000).toFixed(1)}s`);
             await sleep(wait);
         }
@@ -445,7 +455,7 @@ async function callGeminiResilient(opts) {
         try {
             // Full retries on the chosen model; one retry on each fallback -
             // they run on separate capacity, and the user has already waited.
-            const text = await callGeminiWithRetry({ ...opts, model }, i === 0 ? RETRY_DELAYS_MS : [3000]);
+            const text = await callGeminiWithRetry({ ...opts, model }, i === 0 ? RETRY_DELAYS_MS : FALLBACK_RETRY_MS);
             if (i > 0) console.warn(`↪️ Answered by fallback ${model} (${chain[0]} unavailable)`);
             return { text, model };
         } catch (err) {
@@ -474,11 +484,135 @@ async function callGeminiResilient(opts) {
     throw new Error('Google\'s AI servers are overloaded right now - not a problem with your key or your file. Try again in a few minutes.');
 }
 
+// ---- OpenRouter: a second vendor when Google can't answer -----------------------
+// Why: every model in the Gemini chain above is Google's, so a Google overload
+// takes all of them down at the same moment - retries and Flash-Lite don't help
+// then. OpenRouter is one API in front of many vendors (OpenAI, Anthropic...),
+// and its `models` list falls back between them on its side.
+//
+// Only used when OPENROUTER_API_KEY is set; without it nothing changes. Gemini
+// stays first, because its Hebrew and its PDF reading are the ones we've tested.
+//
+// Env:
+//   OPENROUTER_API_KEY   - the key (openrouter.ai/keys). Unset = feature off.
+//   OPENROUTER_MODELS    - comma-separated, tried in order. Check the exact ids
+//                          on openrouter.ai/models before changing.
+//   OPENROUTER_BASE_URL  - tests only (a fake server).
+const OPENROUTER_BASE = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+const DEFAULT_OPENROUTER_MODELS = ['openai/gpt-6-luna', 'anthropic/claude-haiku-4.5'];
+
+function openRouterModels() {
+    const list = String(process.env.OPENROUTER_MODELS || '').split(',').map(s => s.trim()).filter(Boolean);
+    return list.length ? list : DEFAULT_OPENROUTER_MODELS;
+}
+
+// Gemini "parts" -> OpenAI-style content parts (what OpenRouter takes).
+function toOpenRouterContent(parts) {
+    return parts.map(p => {
+        if (p.inlineData && p.inlineData.mimeType === 'application/pdf') {
+            // Models that read PDFs natively get the file as-is; for the
+            // others OpenRouter parses it first.
+            return { type: 'file', file: { filename: 'document.pdf', file_data: `data:application/pdf;base64,${p.inlineData.data}` } };
+        }
+        if (p.inlineData) {
+            return { type: 'image_url', image_url: { url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}` } };
+        }
+        return { type: 'text', text: p.text || '' };
+    });
+}
+
+async function callOpenRouter({ parts, maxTokens = 2048, forceJson = false, system = null, thinkingLevel = 'low', timeoutMs = GEMINI_TIMEOUT_MS }) {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    const models = openRouterModels();
+    const messages = [];
+    if (system) messages.push({ role: 'system', content: system });
+    messages.push({ role: 'user', content: toOpenRouterContent(parts) });
+
+    const body = {
+        models,                        // OpenRouter tries these in order
+        messages,
+        max_tokens: maxTokens,
+        // Reasoning, like Gemini's, is paid from the output budget - keep it
+        // at the level the caller asked for, never above.
+        reasoning: { effort: thinkingLevel === 'minimal' ? 'low' : thinkingLevel },
+        ...(forceJson ? { response_format: { type: 'json_object' } } : {})
+    };
+
+    const started = Date.now();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let res;
+    try {
+        res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+                // Shown on OpenRouter's side as the app name.
+                'X-Title': 'MindSync'
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal
+        });
+    } catch (err) {
+        if (err.name === 'AbortError') throw new Error(`The backup AI (OpenRouter) did not respond within ${Math.round(timeoutMs / 1000)}s.`);
+        throw new Error(`Could not reach the backup AI (OpenRouter): ${err.message}`);
+    } finally {
+        clearTimeout(timeoutId);
+    }
+
+    const raw = await res.text();
+    let data = null;
+    try { data = JSON.parse(raw); } catch { /* not JSON */ }
+
+    if (!res.ok || data?.error) {
+        const msg = data?.error?.message || `OpenRouter returned ${res.status}`;
+        console.error(`❌ OpenRouter HTTP ${res.status}: ${msg}`);
+        if (!data) console.error('   raw body:', raw.slice(0, 500));
+        if (res.status === 401) throw new Error('OpenRouter rejected the key (OPENROUTER_API_KEY).');
+        if (res.status === 402) throw new Error('The OpenRouter account is out of credit.');
+        throw new Error(`The backup AI failed too: ${msg}`);
+    }
+
+    const choice = data?.choices?.[0];
+    const content = choice?.message?.content;
+    const text = (Array.isArray(content) ? content.map(c => c.text || '').join('') : String(content || '')).trim();
+    const usage = data?.usage || {};
+    console.log(`🤖 OpenRouter (${data?.model || models[0]}) ${((Date.now() - started) / 1000).toFixed(1)}s | in ${usage.prompt_tokens || 0} | out ${usage.completion_tokens || 0} | ${text.length} chars | finish=${choice?.finish_reason}`);
+    if (!text) throw new Error(`The backup AI returned an empty response (finish: ${choice?.finish_reason || 'unknown'}).`);
+    return { text, model: data?.model || models[0] };
+}
+
+// Gemini first (its whole chain), then OpenRouter when that fails.
+// Without a Gemini key but with an OpenRouter key, straight to OpenRouter.
+async function callResilient(opts) {
+    const cfg = readConfig();
+    const haveOpenRouter = !!process.env.OPENROUTER_API_KEY;
+    if (!cfg.geminiKey) {
+        if (haveOpenRouter) return callOpenRouter(opts);
+        throw new Error('No AI key is configured on the server.');
+    }
+    try {
+        return await callGeminiResilient({ ...opts, apiKey: cfg.geminiKey, model: activeGeminiModel(cfg) });
+    } catch (geminiErr) {
+        if (!haveOpenRouter) throw geminiErr;
+        console.warn(`↪️ Gemini failed (${geminiErr.message}) - trying OpenRouter (${openRouterModels().join(', ')})`);
+        try {
+            return await callOpenRouter(opts);
+        } catch (orErr) {
+            // The person needs Google's reason first; the backup's second.
+            throw new Error(`${geminiErr.message} The backup AI also failed: ${orErr.message}`);
+        }
+    }
+}
+
 // ---- Public interface --------------------------------------------------------
 
 function resolveProvider() {
     const cfg = readConfig();
-    if (cfg.provider === 'gemini') return cfg.geminiKey ? 'gemini' : 'ollama';
+    // 'gemini' = "the cloud path": Gemini, and/or OpenRouter as the backup.
+    const cloud = cfg.geminiKey || process.env.OPENROUTER_API_KEY;
+    if (cfg.provider === 'gemini') return cloud ? 'gemini' : 'ollama';
     if (cfg.provider === 'ollama') return 'ollama';
     return cfg.geminiKey ? 'gemini' : 'ollama';   // 'auto'
 }
@@ -487,15 +621,12 @@ function resolveProvider() {
  * Text-only generation. Works on both providers.
  */
 async function generateText(prompt, options = {}) {
-    const cfg = readConfig();
     const provider = options.forceProvider || resolveProvider();
     let geminiError = null;
 
     if (provider === 'gemini') {
         try {
-            const r = await callGeminiResilient({
-                apiKey: cfg.geminiKey,
-                model: activeGeminiModel(cfg),
+            const r = await callResilient({
                 parts: [{ text: prompt }],
                 maxTokens: options.maxTokens || 2048,
                 forceJson: options.forceJson,
@@ -552,7 +683,6 @@ async function generateText(prompt, options = {}) {
  * @param {Buffer} pdfBuffer
  */
 async function generateFromPdf(pdfBuffer, prompt, options = {}) {
-    const cfg = readConfig();
     if (resolveProvider() !== 'gemini') {
         throw new Error('Reading PDFs directly requires a Gemini API key. Add one in Settings.');
     }
@@ -562,9 +692,7 @@ async function generateFromPdf(pdfBuffer, prompt, options = {}) {
         { inlineData: { mimeType: 'application/pdf', data: pdfBuffer.toString('base64') } }
     ];
 
-    const r = await callGeminiResilient({
-        apiKey: cfg.geminiKey,
-        model: activeGeminiModel(cfg),
+    const r = await callResilient({
         parts,
         maxTokens: options.maxTokens || 8192,
         forceJson: options.forceJson,
@@ -588,7 +716,6 @@ async function generateFromPdf(pdfBuffer, prompt, options = {}) {
  * @param {Array<{mimeType:string, data:string}>} images  base64, no data: prefix
  */
 async function generateFromImages(images, prompt, options = {}) {
-    const cfg = readConfig();
     if (resolveProvider() !== 'gemini') {
         throw new Error('Reading pages as images requires a Gemini API key. Add one in Settings, or the app will fall back to text extraction.');
     }
@@ -598,9 +725,7 @@ async function generateFromImages(images, prompt, options = {}) {
         ...images.map(img => ({ inlineData: { mimeType: img.mimeType, data: img.data } }))
     ];
 
-    const r = await callGeminiResilient({
-        apiKey: cfg.geminiKey,
-        model: activeGeminiModel(cfg),
+    const r = await callResilient({
         parts,
         maxTokens: options.maxTokens || 4096,
         forceJson: options.forceJson,
