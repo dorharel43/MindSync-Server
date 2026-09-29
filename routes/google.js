@@ -38,16 +38,21 @@ function resultPage(res, ok, message) {
   body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f6f7fb; color: #1d2433; display: grid; place-items: center; min-height: 100vh; margin: 0; }
   .box { background: #fff; border-radius: 14px; padding: 28px 32px; max-width: 380px; text-align: center; box-shadow: 0 6px 24px rgba(0,0,0,.08); }
   h1 { font-size: 20px; margin: 0 0 8px; } p { margin: 0 0 16px; line-height: 1.5; } a { color: #4f46e5; }
+  button { font: inherit; padding: 6px 16px; border-radius: 8px; border: 1px solid #d4d7e1; background: #fff; cursor: pointer; }
 </style></head>
 <body><div class="box">
   <h1>${ok ? 'Google Calendar connected ✓' : 'Not connected'}</h1>
   <p>${safe}</p>
-  <p><a href="/app/">Back to MindSync</a></p>
+  <p>${ok ? '<a href="/app/">Back to MindSync</a>' : '<button id="close" type="button">Close</button> &nbsp; <a href="/app/?google=failed">Back to MindSync</a>'}</p>
 </div>
 <script>
   try { new BroadcastChannel('mindsync').postMessage('google-changed'); } catch (e) {}
-  if (window.opener) setTimeout(function () { window.close(); }, ${ok ? 1200 : 4000});
-  else setTimeout(function () { location.replace('/app/?google=${ok ? 'connected' : 'failed'}'); }, ${ok ? 1200 : 4000});
+  // Success closes by itself. A failure STAYS until the person closes it -
+  // it used to vanish after 4 seconds, before anyone could read why.
+  ${ok
+    ? `if (window.opener) setTimeout(function () { window.close(); }, 1200);
+  else setTimeout(function () { location.replace('/app/?google=connected'); }, 1200);`
+    : `document.getElementById('close').onclick = function () { if (window.opener) window.close(); else location.replace('/app/?google=failed'); };`}
 </script>
 </body></html>`);
 }
