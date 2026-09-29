@@ -137,6 +137,8 @@ app.use('/api/admin', require('./routes/admin'));
 // Web version: the app's logic (AI, parsing, planner...) and file uploads.
 app.use('/api/rpc', require('./rpc'));
 app.use('/api/uploads', require('./rpc/uploads'));
+app.use('/api/feedback', require('./routes/feedback'));
+app.use('/api/google', require('./routes/google'));
 
 // ==========================================
 // Error handling - must be registered last, in this order

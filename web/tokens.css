@@ -1,0 +1,303 @@
+/* ==========================================================================
+   MindSync design tokens
+   --------------------------------------------------------------------------
+   One neutral palette, one accent, one type scale. Every colour, size,
+   radius and shadow in the app comes from here.
+
+   The look follows current productivity software (Linear, Notion, Todoist,
+   GitHub): small, dense type; hairline borders instead of shadows; flat
+   surfaces; lists instead of a card around everything; colour only where it
+   carries meaning (the primary action, the current selection, status).
+
+   Variable names are kept from the previous version (--accent-purple,
+   --stat-bg, ...) so nothing that references them has to change - only the
+   values did. --accent-purple is now blue; the name is historical.
+
+   Load this BEFORE styles.css.
+   ========================================================================== */
+
+:root {
+    /* ---- Spacing (4px grid) ---- */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+    --space-8: 64px;
+
+    /* ---- Type ----
+       14px body, the norm for desktop productivity apps. In px, not rem, so
+       the scale is exact and doesn't depend on a root size. */
+    --text-xs: 12px;
+    --text-sm: 13px;
+    --text-base: 14px;
+    --text-lg: 15px;
+    --text-xl: 18px;
+    --text-2xl: 22px;
+    --text-3xl: 28px;
+
+    --font-normal: 400;
+    --font-medium: 500;
+    --font-semibold: 600;
+    --font-bold: 600;           /* nothing in the UI goes heavier than 600 */
+
+    --leading-tight: 1.3;
+    --leading-normal: 1.5;
+
+    /* ---- Radii: small and consistent ---- */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+    --radius-full: 9999px;
+
+    /* ---- Elevation: borders do the work; shadows only for things that float
+       (menus, dialogs, toasts) ---- */
+    --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.04);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
+    --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
+    --shadow-focus: 0 0 0 3px rgba(47, 100, 214, 0.28);
+
+    /* ---- Motion ---- */
+    --duration-fast: 100ms;
+    --duration-base: 160ms;
+    --duration-slow: 240ms;
+    --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+    /* ---- Layout ---- */
+    --sidebar-width: 232px;
+    --content-max-width: 1120px;
+    --control-h: 32px;          /* buttons, inputs, selects - one height */
+    --control-h-sm: 28px;
+    --control-h-lg: 36px;
+
+    /* ---- Layers ---- */
+    --z-base: 1;
+    --z-dropdown: 100;
+    --z-sticky: 200;
+    --z-banner: 300;
+    --z-modal-backdrop: 400;
+    --z-modal: 410;
+    --z-toast: 500;
+
+    /* ---- Colour: light ---- */
+    --bg-main: #ffffff;         /* the page */
+    --bg-sidebar: #f7f7f8;
+    --bg-card: #ffffff;
+    --bg-subtle: #f4f4f5;       /* wells, table headers, tracks */
+    --bg-overlay: rgba(9, 9, 11, 0.40);
+
+    --text-primary: #18181b;
+    --text-secondary: #5c5c66;
+    --text-tertiary: #8b8b95;
+    --text-inverse: #ffffff;
+
+    --accent-purple: #2f64d6;   /* the one accent (blue) */
+    --accent-hover: #2554bd;
+    --accent-subtle: rgba(47, 100, 214, 0.08);
+    --accent-text: #2552b8;     /* accent used as text on white: AA contrast */
+
+    --border-color: #e6e6ea;
+    --border-strong: #d4d4da;
+
+    --status-success: #16803c;
+    --status-success-bg: rgba(22, 128, 60, 0.09);
+    --status-warning: #b45309;
+    --status-warning-bg: rgba(180, 83, 9, 0.09);
+    --status-danger: #c42b2b;
+    --status-danger-bg: rgba(196, 43, 43, 0.08);
+    --status-info: #2f64d6;
+    --status-info-bg: rgba(47, 100, 214, 0.08);
+
+    --urgency-normal: var(--text-tertiary);
+    --urgency-medium: var(--status-info);
+    --urgency-high: var(--status-warning);
+    --urgency-urgent: var(--status-danger);
+
+    /* Event types: muted, distinguishable, never alarming. Shown as a thin
+       bar plus a light tint, the way calendar apps do it. */
+    --event-lesson: #3b7bc4;
+    --event-exam: #8a5cc2;
+    --event-study: #2f8f5b;
+    --event-personal: #c07a2c;
+
+    /* Legacy names still used by older rules */
+    --yellow-badge: var(--text-secondary);
+    --badge-bg: var(--bg-subtle);
+    --stat-bg: var(--bg-subtle);
+    --hover-bg: #f1f1f3;
+    --active-bg: #ebebee;       /* selected nav item, pressed state */
+    --timeline-dot: #c9c9d0;
+    --active-task-bg: var(--accent-subtle);
+
+    --scrollbar: rgba(0, 0, 0, 0.18);
+}
+
+body.dark-mode {
+    --bg-main: #121214;
+    --bg-sidebar: #0e0e10;
+    --bg-card: #18181b;
+    --bg-subtle: #1f1f23;
+    --bg-overlay: rgba(0, 0, 0, 0.60);
+
+    --text-primary: #ececef;
+    --text-secondary: #a1a1aa;
+    --text-tertiary: #71717a;
+    --text-inverse: #0b0b0d;
+
+    --accent-purple: #7aa2f7;
+    --accent-hover: #93b4fa;
+    --accent-subtle: rgba(122, 162, 247, 0.12);
+    --accent-text: #93b4fa;
+
+    --border-color: #27272b;
+    --border-strong: #35353b;
+
+    --status-success: #4ade80;
+    --status-success-bg: rgba(74, 222, 128, 0.12);
+    --status-warning: #f5b454;
+    --status-warning-bg: rgba(245, 180, 84, 0.12);
+    --status-danger: #f47272;
+    --status-danger-bg: rgba(244, 114, 114, 0.12);
+    --status-info: #7aa2f7;
+    --status-info-bg: rgba(122, 162, 247, 0.12);
+
+    --event-lesson: #6ea6e6;
+    --event-exam: #b393e6;
+    --event-study: #5fc08a;
+    --event-personal: #e0a25c;
+
+    --hover-bg: rgba(255, 255, 255, 0.05);
+    --active-bg: rgba(255, 255, 255, 0.08);
+    --timeline-dot: #3f3f46;
+    --scrollbar: rgba(255, 255, 255, 0.16);
+
+    --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.3);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+    --shadow-focus: 0 0 0 3px rgba(122, 162, 247, 0.30);
+}
+
+/* ==========================================================================
+   Primitives (used by ui.js dialogs and a few screens)
+   ========================================================================== */
+.ms-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: var(--control-h);
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    font-family: inherit;
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color var(--duration-fast) var(--ease-out),
+                border-color var(--duration-fast) var(--ease-out),
+                color var(--duration-fast) var(--ease-out);
+}
+.ms-btn:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.ms-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.ms-btn--primary { background: var(--accent-purple); color: var(--text-inverse); }
+.ms-btn--primary:hover:not(:disabled) { background: var(--accent-hover); }
+
+.ms-btn--secondary {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-xs);
+}
+.ms-btn--secondary:hover:not(:disabled) { background: var(--hover-bg); }
+
+.ms-btn--ghost { background: transparent; color: var(--text-secondary); padding: 0 var(--space-2); }
+.ms-btn--ghost:hover:not(:disabled) { background: var(--hover-bg); color: var(--text-primary); }
+
+.ms-btn--success { background: var(--status-success); color: #fff; }
+.ms-btn--danger  { background: var(--status-danger);  color: #fff; }
+.ms-btn--danger:hover:not(:disabled) { filter: brightness(0.94); }
+
+.ms-btn--sm { height: var(--control-h-sm); padding: 0 10px; font-size: var(--text-xs); }
+.ms-btn--icon { width: var(--control-h); padding: 0; }
+
+.ms-input {
+    width: 100%;
+    height: var(--control-h);
+    padding: 0 10px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--text-sm);
+    transition: border-color var(--duration-fast) var(--ease-out),
+                box-shadow var(--duration-fast) var(--ease-out);
+}
+.ms-input::placeholder { color: var(--text-tertiary); }
+.ms-input:focus { outline: none; border-color: var(--accent-purple); box-shadow: var(--shadow-focus); }
+
+.ms-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+}
+
+/* Tags: small, square-ish, quiet */
+.ms-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: 20px;
+    padding: 0 6px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: var(--font-medium);
+    line-height: 1;
+    background: var(--bg-subtle);
+    color: var(--text-secondary);
+}
+.ms-badge--accent  { background: var(--accent-subtle);     color: var(--accent-text); }
+.ms-badge--success { background: var(--status-success-bg); color: var(--status-success); }
+.ms-badge--warning { background: var(--status-warning-bg); color: var(--status-warning); }
+.ms-badge--danger  { background: var(--status-danger-bg);  color: var(--status-danger); }
+.ms-badge--info    { background: var(--status-info-bg);    color: var(--status-info); }
+
+/* Utilities */
+.ms-stack   { display: flex; flex-direction: column; }
+.ms-row     { display: flex; align-items: center; }
+.ms-gap-1 { gap: var(--space-1); } .ms-gap-2 { gap: var(--space-2); }
+.ms-gap-3 { gap: var(--space-3); } .ms-gap-4 { gap: var(--space-4); }
+.ms-gap-5 { gap: var(--space-5); }
+.ms-grow    { flex: 1; min-width: 0; }
+.ms-shrink-0 { flex-shrink: 0; }
+.ms-muted   { color: var(--text-secondary); }
+.ms-text-sm { font-size: var(--text-sm); }
+.ms-text-xs { font-size: var(--text-xs); }
+.ms-tabular { font-variant-numeric: tabular-nums; }
+
+.ms-sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}
