@@ -24,19 +24,22 @@
 
 ## 1. לפני המיזוג: בדיקה מהירה אצלך (לא חובה, מומלץ)
 
-```bash
-cd MindSync-Server
-git fetch && git checkout web-version
+ב-PowerShell, מתוך התיקייה של השרת (כל שורה בנפרד, כי PowerShell הישן לא מכיר `&&`):
+```powershell
+git fetch
+git checkout web-version
 npm install
-# ב-.env שלך: MONGO_URI, JWT_SECRET, ועכשיו גם GEMINI_API_KEY
 npm start
 ```
+לפני `npm start` מוסיפים ל-`.env` של השרת את השורה `GEMINI_API_KEY=...`. `MONGO_URI` ו-`JWT_SECRET` כבר נמצאים שם.
+שים לב: `.env` מצביע על מסד הנתונים האמיתי, אז לבדיקה כדאי להירשם עם מייל בדיקה.
 פתח `http://localhost:5000/` בדפדפן, לחץ **Open MindSync**, הירשם, העלה קובץ, בקש סיכום.
 
 > **הערה:** הקבצים בתיקייה `web/` **נוצרים אוטומטית** מהריפו של הדסקטופ. לא עורכים אותם ידנית. כשמשנים משהו בממשק (`renderer.js`, `index.html` וכו' בריפו `MindSync`), מריצים:
-> ```bash
-> python3 tools/sync-web.py ../MindSync
+> ```powershell
+> python tools\sync-web.py ..\MindSync
 > ```
+> (הנתיב `..\MindSync` = איפה שנמצאת התיקייה של הדסקטופ ביחס לתיקיית השרת. אם היא במקום אחר, שם כותבים את הנתיב שלה.)
 > ומבצעים commit לתיקייה `web/` בריפו של השרת. בלי זה, גרסת הווב לא תקבל את השינוי.
 
 ---
