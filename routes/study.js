@@ -269,6 +269,128 @@ function findGenuineDifficultyItems(items) {
     .slice(0, 60);
 }
 
+// ==========================================
+// Mock exams (30/9)
+// ==========================================
+// A course's questions under exam conditions: typed answers, the check at the
+// end, one score. The latest score is the course's "if the exam were today".
+const ExamRun = require('../models/ExamRun');
+// A file that IS a past exam: its questions are the closest thing to the
+// real one, so they come first.
+const PAST_EXAM_FILE = /מבחן|בחינה|מועד|בוחן|exam|midterm|final|quiz/i;
+const shuffled = (list) => { const a = list.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+// GET /api/study/exam/pick?course=...&count=15
+router.get(
+  '/exam/pick',
+  asyncHandler(async (req, res) => {
+    const course = String(req.query.course || '').trim();
+    if (!course) throw new ApiError(400, 'course is required');
+    const count = Math.min(Math.max(parseInt(req.query.count, 10) || 15, 3), 40);
+    const all = (await StudyItem.find({ userId: req.userId, suspended: false }).select('-reviews').lean())
+      .filter(i => courseOf(i) === course || (i.category || '') === course);
+    // Past-exam questions first (up to half), then the rest spread across
+    // topics - a real exam covers the course, not one chapter.
+    const past = shuffled(all.filter(i => PAST_EXAM_FILE.test(i.sourceFile || '')));
+    const picked = past.slice(0, Math.ceil(count / 2));
+    const byTopic = new Map();
+    for (const i of shuffled(all.filter(i => !picked.includes(i)))) {
+      const key = i.skillTag || i.sourceFile || '';
+      if (!byTopic.has(key)) byTopic.set(key, []);
+      byTopic.get(key).push(i);
+    }
+    const lanes = [...byTopic.values()];
+    while (picked.length < count && lanes.some(l => l.length)) {
+      for (const lane of lanes) { if (lane.length && picked.length < count) picked.push(lane.shift()); }
+    }
+    res.json(shuffled(picked).map(i => ({
+      id: String(i._id), question: i.question, answer: i.answer || i.mySolution || '', mode: i.mode,
+      solutionSource: i.solutionSource, skillTag: i.skillTag || '', sourceFile: i.sourceFile || '',
+      fromPastExam: PAST_EXAM_FILE.test(i.sourceFile || '')
+    })));
+  })
+);
+
+// Score: correct = 1, partial = 1/2, wrong or blank = 0, over the answers
+// that were checked. The margin is one standard error - with 10 questions a
+// score is honestly rough, and saying so is the point.
+function examScore(answers) {
+  const inScore = answers.filter(a => a.verdict !== 'unchecked');
+  const n = inScore.length;
+  if (!n) return { checked: 0, score: 0, margin: 0 };
+  const points = inScore.reduce((sum, a) => sum + (a.verdict === 'correct' ? 1 : a.verdict === 'partial' ? 0.5 : 0), 0);
+  const p = points / n;
+  return { checked: n, score: Math.round(p * 100), margin: Math.round(100 * Math.sqrt(Math.max(p * (1 - p), 0.04) / n)) };
+}
+
+// POST /api/study/exam/runs  { course, startedAt, limitSec, usedSec, answers: [{ itemId, confidence, verdict }] }
+// Saves the run, and every checked answer also counts as practice for that
+// question (so the schedule learns from the exam too).
+router.post(
+  '/exam/runs',
+  asyncHandler(async (req, res) => {
+    const course = String(req.body.course || '').trim().slice(0, 100);
+    const raw = Array.isArray(req.body.answers) ? req.body.answers.slice(0, 40) : [];
+    if (!course || !raw.length) throw new ApiError(400, 'course and answers are required');
+    const VERDICTS = ['correct', 'partial', 'wrong', 'blank', 'unchecked'];
+    const CONF = ['sure', 'think_so', 'guessing', 'none'];
+    const ids = raw.map(a => a && a.itemId).filter(id => typeof id === 'string' && /^[a-f0-9]{24}$/i.test(id));
+    const items = await StudyItem.find({ _id: { $in: ids }, userId: req.userId });
+    const byId = new Map(items.map(i => [String(i._id), i]));
+    const answers = raw.map(a => {
+      const item = a && byId.get(String(a.itemId));
+      if (!item) return null;
+      return {
+        itemId: item._id,
+        question: String(item.question || '').slice(0, 600),
+        topic: String(item.skillTag || '').slice(0, 120),
+        confidence: CONF.includes(a.confidence) ? a.confidence : 'none',
+        verdict: VERDICTS.includes(a.verdict) ? a.verdict : 'unchecked'
+      };
+    }).filter(Boolean);
+    if (!answers.length) throw new ApiError(400, 'None of these questions were found');
+
+    // Each checked answer is practice too.
+    for (const a of answers) {
+      if (a.verdict === 'unchecked') continue;
+      const item = byId.get(String(a.itemId));
+      const practice = item.mode === 'practice';
+      const outcome = a.verdict === 'correct' ? (practice ? 'solved' : 'got_it')
+        : a.verdict === 'partial' ? (practice ? 'stuck' : 'partial')
+          : (practice ? 'wrong' : 'missed');
+      const confidence = a.verdict === 'blank' || a.confidence === 'none' ? 'dont_know' : a.confidence;
+      try {
+        await recordReview(req.userId, item, { confidence, outcome, aiSuggested: a.verdict === 'blank' ? null : outcome });
+      } catch (err) { console.warn('mock exam: review not saved:', err.message); }
+    }
+
+    const run = await ExamRun.create({
+      userId: req.userId, course,
+      startedAt: req.body.startedAt ? new Date(req.body.startedAt) : new Date(),
+      finishedAt: new Date(),
+      limitSec: Math.max(0, Math.min(Number(req.body.limitSec) || 0, 6 * 3600)),
+      usedSec: Math.max(0, Math.min(Number(req.body.usedSec) || 0, 6 * 3600)),
+      answers,
+      ...examScore(answers)
+    });
+    // History: the last 20 per course.
+    const old = await ExamRun.find({ userId: req.userId, course }).sort({ finishedAt: -1 }).skip(20).select('_id').lean();
+    if (old.length) await ExamRun.deleteMany({ _id: { $in: old.map(o => o._id) } });
+    res.status(201).json(run);
+  })
+);
+
+// GET /api/study/exam/runs?course=...
+router.get(
+  '/exam/runs',
+  asyncHandler(async (req, res) => {
+    const filter = { userId: req.userId };
+    if (req.query.course) filter.course = String(req.query.course);
+    const runs = await ExamRun.find(filter).sort({ finishedAt: -1 }).limit(20).select('-answers').lean();
+    res.json(runs);
+  })
+);
+
 // GET /api/study/due?limit=20&category=...&sourceFile=...&all=1
 // The study session queue.
 //
@@ -447,6 +569,12 @@ router.get(
     } catch (err) {
       console.warn('study stats: file count skipped:', err.message);
     }
+    // The latest mock exam per course (30/9) - "if the exam were today".
+    const lastMock = {};
+    try {
+      const runs = await ExamRun.find({ userId: req.userId }).sort({ finishedAt: -1 }).limit(200).select('course score margin checked finishedAt').lean();
+      for (const r of runs) if (!lastMock[r.course]) lastMock[r.course] = { score: r.score, margin: r.margin, checked: r.checked, at: r.finishedAt };
+    } catch (err) { console.warn('study stats: mock exams skipped:', err.message); }
     const subjects = Object.entries(byCategory)
       .map(([name, v]) => {
         const c = plan.byCourse[name] || { dueReviews: 0, newToday: 0, unseen: 0, exam: null };
@@ -459,7 +587,8 @@ router.get(
           newToday: c.newToday,
           neverReviewed: v.neverReviewed,
           // { title, date: 'YYYY-MM-DD', daysLeft } or null
-          exam: c.exam || null
+          exam: c.exam || null,
+          lastMock: lastMock[name] || null
         };
       })
       .sort((a, b) =>
@@ -588,9 +717,38 @@ router.delete(
     // BUG FIX: this used to be deleteMany({}) with no filter - "wipe my
     // deck" would have wiped every user's study items.
     const result = await StudyItem.deleteMany({ userId: req.userId });
+    await ExamRun.deleteMany({ userId: req.userId });   // their mock exams go with them
     res.json({ success: true, deleted: result.deletedCount });
   })
 );
+
+// One answer recorded and the question rescheduled - for practice and for
+// mock exams alike (30/9). The course's next exam caps how far away the next
+// review can be.
+async function recordReview(userId, item, { confidence, outcome, aiSuggested = null, clientId, secondsSpent = 0 }) {
+  const course = courseOf(item);
+  const exam = (await examsForCourses(userId, [course]))[course] || null;
+  const next = schedule(item, outcome, confidence, exam ? { daysUntilExam: exam.daysLeft, examDate: exam.date } : {});
+  item.reviews.push({
+    confidence,
+    outcome,
+    wasCorrect: OUTCOME_CORRECT[outcome],
+    aiSuggested,
+    clientId: typeof clientId === 'string' ? clientId.slice(0, 40) : undefined,
+    secondsSpent: Math.min(Math.max(Number(secondsSpent) || 0, 0), 24 * 3600),
+    reviewedAt: new Date()
+  });
+  // Keep the recent history only (30/9): answering the same question in a
+  // loop used to grow one document without end.
+  if (item.reviews.length > 300) item.reviews.splice(0, item.reviews.length - 300);
+  item.interval = next.interval;
+  item.ease = next.ease;
+  item.repetitions = next.repetitions;
+  item.lapses = next.lapses;
+  item.dueDate = next.dueDate;
+  await item.save({ validateModifiedOnly: true });
+  return { next, exam };
+}
 
 // POST /api/study/:id/review   { confidence, outcome, secondsSpent }
 // The heart of the system: records the attempt and reschedules.
@@ -628,31 +786,7 @@ router.post(
       return res.json({ item, grade: null, nextInterval: item.interval, cappedForExam: null, wasOverconfident: confidence === 'sure' && !OUTCOME_CORRECT[outcome], duplicate: true });
     }
 
-    // The course's next exam caps how far away the next review can be.
-    const course = courseOf(item);
-    const exam = (await examsForCourses(req.userId, [course]))[course] || null;
-    const next = schedule(item, outcome, confidence, exam ? { daysUntilExam: exam.daysLeft, examDate: exam.date } : {});
-
-    item.reviews.push({
-      confidence,
-      outcome,
-      wasCorrect: OUTCOME_CORRECT[outcome],
-      aiSuggested,
-      clientId: typeof req.body.clientId === 'string' ? req.body.clientId.slice(0, 40) : undefined,
-      secondsSpent: Math.min(Math.max(Number(secondsSpent) || 0, 0), 24 * 3600),
-      reviewedAt: new Date()
-    });
-    // Keep the recent history only (30/9): answering the same question in a
-    // loop used to grow one document without end.
-    if (item.reviews.length > 300) item.reviews.splice(0, item.reviews.length - 300);
-
-    item.interval = next.interval;
-    item.ease = next.ease;
-    item.repetitions = next.repetitions;
-    item.lapses = next.lapses;
-    item.dueDate = next.dueDate;
-
-    await item.save({ validateModifiedOnly: true });
+    const { next, exam } = await recordReview(req.userId, item, { confidence, outcome, aiSuggested, clientId: req.body.clientId, secondsSpent });
 
     res.json({
       item,

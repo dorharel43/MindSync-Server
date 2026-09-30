@@ -24,6 +24,7 @@ router.post(
       Folder.deleteMany({ userId: req.userId }),
       FileItem.deleteMany({ userId: req.userId }),
       StudyItem.deleteMany({ userId: req.userId }),
+      require('../models/ExamRun').deleteMany({ userId: req.userId }),
       // The uploaded originals too (30/9).
       require('../rpc/storage').removeAllForUser(req.userId).catch(() => {}),
     ]);
