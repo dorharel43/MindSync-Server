@@ -98,7 +98,7 @@ const studyItemSchema = new mongoose.Schema({
     },
 
     category: { type: String, default: '', trim: true, maxlength: 100 },
-    sourceFile: { type: String, default: '', trim: true },
+    sourceFile: { type: String, default: '', trim: true, maxlength: 300 },
 
     // ---- Scheduling state (SM-2 derived) ----
     // Days until the next review. 0 means "not yet scheduled / new".

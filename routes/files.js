@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const FileItem = require('../models/FileItem');
 const asyncHandler = require('../middleware/asyncHandler');
+const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
 const { requireAuth } = require('../middleware/auth');
 
@@ -39,6 +40,7 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const { name, content, folder, sourcePath } = req.body;
+    await assertRoom(FileItem, req.userId);
     const file = await FileItem.create({ userId: req.userId, name, content, folder, sourcePath });
     res.status(201).json(file);
   })
@@ -72,6 +74,9 @@ router.delete(
   asyncHandler(async (req, res) => {
     const file = await FileItem.findOneAndDelete({ _id: req.params.id, userId: req.userId });
     if (!file) throw new ApiError(404, 'File not found');
+    // The uploaded original goes too (30/9 - it used to stay behind, using
+    // the owner's storage and keeping a file they had deleted).
+    if (file.sourcePath) await require('../rpc/storage').remove(file.sourcePath, req.userId).catch(() => {});
     res.json({ success: true, deletedId: req.params.id });
   })
 );

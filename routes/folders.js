@@ -3,6 +3,7 @@ const router = express.Router();
 const Folder = require('../models/Folder');
 const FileItem = require('../models/FileItem');
 const asyncHandler = require('../middleware/asyncHandler');
+const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
 const { requireAuth } = require('../middleware/auth');
 
@@ -22,6 +23,7 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const { name } = req.body;
+    await assertRoom(Folder, req.userId);
     const folder = await Folder.create({ userId: req.userId, name });
     res.status(201).json(folder);
   })

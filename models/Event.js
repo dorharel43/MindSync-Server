@@ -88,6 +88,7 @@ const eventSchema = new mongoose.Schema(
     googleEventId: {
       type: String,
       default: null,
+      maxlength: 300,
     },
   },
   { timestamps: true }

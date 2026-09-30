@@ -785,19 +785,33 @@ async function testGeminiKey(apiKey, model = DEFAULT_GEMINI_MODEL) {
 }
 
 // ---- Daily allowance per user (rpc/aiUsage.js) ----
-// Whole-file jobs are "heavy"; short text jobs "light". Checked before the
-// call, counted after it succeeds.
+// Whole-file jobs are "heavy"; short text jobs "light". Reserved before the
+// call (atomically), given back only if Google didn't do the work.
 const usage = require('./aiUsage');
 function withAllowance(fn, kindFor) {
     return async (...args) => {
         const kind = kindFor(...args);
-        await usage.check(kind);
-        const out = await fn(...args);
-        await usage.count(kind).catch(err => console.warn('AI usage not counted:', err.message));
-        return out;
+        const ticket = await usage.reserve(kind);
+        try {
+            const out = await fn(...args);
+            await usage.release(ticket, false);
+            return out;
+        } catch (err) {
+            await usage.release(ticket, usage.notBilled(err));
+            throw err;
+        }
     };
 }
-const generateTextCounted = withAllowance(generateText, (prompt, options = {}) => ((options.maxTokens || 0) >= 4000 ? 'heavy' : 'light'));
+// A prompt is never more than this (30/9): every caller already caps its
+// input, this is the backstop - one request can't send Google megabytes.
+const MAX_PROMPT_CHARS = 200000;
+function guardPromptSize(prompt) {
+    const len = Array.isArray(prompt) ? prompt.reduce((n, p) => n + String((p && p.text) || p || '').length, 0) : String(prompt || '').length;
+    if (len > MAX_PROMPT_CHARS) throw new Error('This text is too long for the AI. Try a shorter part of the file.');
+}
+// Heavy = a long answer OR a long prompt (so a big text can't pass as "light").
+const generateTextCounted = withAllowance((prompt, options) => { guardPromptSize(prompt); return generateText(prompt, options); },
+    (prompt, options = {}) => ((options.maxTokens || 0) >= 4000 || String(prompt || '').length > 12000 ? 'heavy' : 'light'));
 const generateFromPdfCounted = withAllowance(generateFromPdf, () => 'heavy');
 const generateFromImagesCounted = withAllowance(generateFromImages, () => 'heavy');
 

@@ -14,10 +14,14 @@ const fileItemSchema = new mongoose.Schema(
       type: String,
       required: [true, 'File name is required'],
       trim: true,
+      maxlength: [300, 'File name is too long'],
     },
+    // Capped (30/9): the text extracted from a big PDF is well under this;
+    // without a cap one user could fill the shared database.
     content: {
       type: String,
       default: '',
+      maxlength: [1500000, 'This file\'s text is too long to store.'],
     },
     // Stored as the folder's *name* (matches the client: uploadFolderSelect.value).
     // "No Folder" is the unfiled bucket.
@@ -25,6 +29,7 @@ const fileItemSchema = new mongoose.Schema(
       type: String,
       default: 'No Folder',
       trim: true,
+      maxlength: 120,
     },
     // Absolute path to the file as originally chosen, kept so a PDF can be
     // re-rendered into page images for vision reading. Extracted text is a
@@ -34,6 +39,7 @@ const fileItemSchema = new mongoose.Schema(
       type: String,
       default: '',
       trim: true,
+      maxlength: 500,
     },
     // The AI summary of this file, saved so it survives closing the window.
     // It used to live only in the modal and was lost the moment it closed,

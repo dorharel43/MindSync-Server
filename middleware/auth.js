@@ -35,6 +35,11 @@ function requireAuth(req, res, next) {
             : 'Invalid or tampered token.';
         return next(new ApiError(401, message));
     }
+    // Only login tokens are logins. Anything signed for another purpose
+    // (e.g. the Google connect 'state', which travels in URLs) is refused.
+    if (!payload || typeof payload.sub !== 'string' || payload.purpose) {
+        return next(new ApiError(401, 'Invalid or tampered token.'));
+    }
     // A valid token for an account that was deleted: refused. Tokens live 30
     // days, so without this an app left open elsewhere would keep writing
     // data for a user who no longer exists.

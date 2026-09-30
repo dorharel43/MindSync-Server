@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Task = require('../models/Task');
 const asyncHandler = require('../middleware/asyncHandler');
+const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
 const { requireAuth } = require('../middleware/auth');
 
@@ -57,9 +58,10 @@ router.post(
     const { title, date, dueDate, estimatedMinutes, urgency, category, subtasks } = req.body;
 
     const normalizedSubtasks = Array.isArray(subtasks)
-      ? subtasks.map((s) => (typeof s === 'string' ? { title: s, completed: false } : { title: s.title, completed: !!s.completed }))
+      ? subtasks.filter((s) => s != null).map((s) => (typeof s === 'string' ? { title: s, completed: false } : { title: s.title, completed: !!s.completed }))
       : [];
 
+    await assertRoom(Task, req.userId);
     const task = await Task.create({
       userId: req.userId,
       title, date, dueDate, estimatedMinutes, urgency, category,

@@ -2,7 +2,7 @@ const ApiError = require('./ApiError');
 
 // Catches any request that didn't match a route at all.
 function notFound(req, res, next) {
-  next(new ApiError(404, `Route not found: ${req.method} ${req.originalUrl}`));
+  next(new ApiError(404, 'Not found.'));
 }
 
 // Single place that turns *any* error thrown/forwarded anywhere in the app
@@ -17,12 +17,13 @@ function errorHandler(err, req, res, next) {
   if (err.name === 'ValidationError') {
     statusCode = 400;
     details = Object.values(err.errors).map((e) => e.message);
-    message = 'Validation failed';
+    // The first reason is what the person needs to read ("title is too long").
+    message = details[0] || 'Validation failed';
   }
 
   if (err.name === 'CastError') {
     statusCode = 400;
-    message = `Invalid ${err.path}: "${err.value}"`;
+    message = `Invalid ${err.path}.`;
   }
 
   if (err.code === 11000) {
@@ -35,9 +36,17 @@ function errorHandler(err, req, res, next) {
     statusCode = 400;
     message = 'Malformed JSON in request body';
   }
+  if (err.type === 'entity.too.large') {
+    statusCode = 413;
+    message = 'This is too large to send.';
+  }
 
+  // 500s: the real reason goes to the server log only - it can contain
+  // internals (database messages, code paths) that the client shouldn't see.
   if (statusCode >= 500) {
     console.error('❌ Server error:', err);
+    // Our own ApiError(503, '...') messages are written for people - keep them.
+    if (!(err instanceof ApiError)) message = 'Something went wrong on the server. Please try again.';
   }
 
   res.status(statusCode).json({

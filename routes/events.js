@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Event = require('../models/Event');
 const asyncHandler = require('../middleware/asyncHandler');
+const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
 const { requireAuth } = require('../middleware/auth');
 
@@ -34,6 +35,7 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const { title, day, date, until, time, type, googleEventId, durationMinutes, autoScheduled, task } = req.body;
+    await assertRoom(Event, req.userId);
     const event = await Event.create({
       userId: req.userId,
       title, day, date, until, time, type, googleEventId, durationMinutes, autoScheduled, task

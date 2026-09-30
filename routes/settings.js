@@ -33,9 +33,11 @@ router.get(
 router.post(
   '/blocked-apps',
   asyncHandler(async (req, res) => {
-    const { appName } = req.body;
+    const appName = typeof req.body.appName === 'string' ? req.body.appName.trim() : '';
     if (!appName) throw new ApiError(400, 'appName is required');
+    if (appName.length > 100) throw new ApiError(400, 'That app name is too long.');
     const settings = await getSettingsForUser(req.userId);
+    if (settings.blockedApps.length >= 100) throw new ApiError(400, 'The block list is full (100 apps).');
     if (!settings.blockedApps.includes(appName)) {
       settings.blockedApps.push(appName);
       await settings.save();

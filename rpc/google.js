@@ -70,6 +70,9 @@ function decrypt(blob) {
 class GoogleError extends Error {
     constructor(message, status, code) { super(message); this.status = status; this.code = code; }
 }
+// Messages we wrote for people ("leave the calendar box ticked") - safe and
+// useful to show. Raw text from Google stays in the log (30/9).
+const peopleError = (message, status, code) => Object.assign(new GoogleError(message, status, code), { forPeople: true });
 
 async function postForm(url, fields) {
     const res = await fetch(url, {
@@ -103,9 +106,21 @@ async function calendarCall(accessToken, method, path, body) {
 // state = a short-lived signed note of WHO is connecting, so the callback
 // (which arrives without the app's login header) knows which account to
 // attach the calendar to - and a forged callback can't pick someone else.
-function connectUrl(userId, returnTo = '') {
-    const state = jwt.sign({ sub: String(userId), purpose: 'google-connect', returnTo: String(returnTo).slice(0, 100) },
-        process.env.JWT_SECRET, { expiresIn: '15m' });
+// 30/9 security pass:
+//  - signed with its OWN key (derived from JWT_SECRET), so a state can never
+//    pass as a login token - it travels in URLs and browser history;
+//  - carries the hash of a random nonce that is also put in an HttpOnly
+//    cookie by /connect, so the callback only works in the browser that
+//    started the connection. Without it, someone could send their own
+//    connect link to a victim and get the victim's Google linked to THEIR
+//    MindSync account.
+// (crypto is required at the top of this file)
+const stateKey = () => crypto.createHash('sha256').update(`${process.env.JWT_SECRET}::google-state`).digest('hex');
+const nonceHash = (nonce) => crypto.createHash('sha256').update(String(nonce || '')).digest('hex');
+
+function connectUrl(userId, returnTo = '', nonce = '') {
+    const state = jwt.sign({ sub: String(userId), purpose: 'google-connect', nh: nonceHash(nonce), returnTo: String(returnTo).slice(0, 100) },
+        stateKey(), { expiresIn: '15m' });
     const params = new URLSearchParams({
         client_id: process.env.GOOGLE_CLIENT_ID,
         redirect_uri: process.env.GOOGLE_REDIRECT_URI,
@@ -119,9 +134,14 @@ function connectUrl(userId, returnTo = '') {
     return `${AUTH_URL}?${params}`;
 }
 
-function readState(state) {
-    const payload = jwt.verify(state, process.env.JWT_SECRET);
+function readState(state, nonce) {
+    const payload = jwt.verify(state, stateKey());
     if (payload.purpose !== 'google-connect') throw new Error('wrong purpose');
+    if (!nonce || payload.nh !== nonceHash(nonce)) {
+        const e = new Error('other browser');
+        e.otherBrowser = true;
+        throw e;
+    }
     return { userId: payload.sub, returnTo: payload.returnTo || '' };
 }
 
@@ -139,8 +159,8 @@ async function createCalendar(accessToken) {
     return cal.id;
 }
 
-async function finishConnect(code, state) {
-    const { userId, returnTo } = readState(state);
+async function finishConnect(code, state, nonce) {
+    const { userId, returnTo } = readState(state, nonce);
     const tokens = await postForm(TOKEN_URL, {
         code,
         client_id: process.env.GOOGLE_CLIENT_ID,
@@ -148,11 +168,11 @@ async function finishConnect(code, state) {
         redirect_uri: process.env.GOOGLE_REDIRECT_URI,
         grant_type: 'authorization_code'
     });
-    if (!tokens.refresh_token) throw new GoogleError('Google did not give MindSync lasting access. Please try connecting again.');
+    if (!tokens.refresh_token) throw peopleError('Google did not give MindSync lasting access. Please try connecting again.');
     if (tokens.scope && !/calendar/.test(tokens.scope)) {
         // Useless without the calendar - give the access back rather than keep it.
         await postForm(REVOKE_URL, { token: tokens.refresh_token }).catch(() => {});
-        throw new GoogleError('Calendar access wasn\'t allowed. Connect again and leave the calendar box ticked.', 403, 'scope');
+        throw peopleError('Calendar access wasn\'t allowed. Connect again and leave the calendar box ticked.', 403, 'scope');
     }
 
     // Reconnecting keeps using the MindSync calendar made last time.
@@ -195,7 +215,7 @@ function cacheToken(userId, token, expiresIn) {
 
 async function accessFor(userId) {
     const link = await GoogleLink.findOne({ userId });
-    if (!link) throw new GoogleError(NOT_CONNECTED, 400, 'not_connected');
+    if (!link) throw peopleError(NOT_CONNECTED, 400, 'not_connected');
     const cached = accessTokens.get(String(userId));
     if (cached && cached.expiresAt > Date.now()) return { link, token: cached.token };
     try {
@@ -212,7 +232,7 @@ async function accessFor(userId) {
         // account, or (while the Google app is in "Testing") 7 days passed.
         if (err.code === 'invalid_grant') {
             await GoogleLink.deleteOne({ userId });
-            throw new GoogleError(EXPIRED, 401, 'expired');
+            throw peopleError(EXPIRED, 401, 'expired');
         }
         throw err;
     }

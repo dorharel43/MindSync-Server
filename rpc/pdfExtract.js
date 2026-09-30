@@ -161,7 +161,16 @@ async function extractPdfText(filePath) {
     const doc = await loadingTask.promise;
     const pages = [];
 
-    for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
+    // Bounded (30/9): a crafted PDF with thousands of pages used to keep the
+    // server busy for everyone. Enough for any course reader; the rest of a
+    // longer file is simply not extracted (the AI can still read the PDF).
+    const MAX_PAGES = Number(process.env.PDF_MAX_PAGES) || 400;
+    const deadline = Date.now() + (Number(process.env.PDF_EXTRACT_MS) || 30000);
+    const last = Math.min(doc.numPages, MAX_PAGES);
+    for (let pageNum = 1; pageNum <= last; pageNum++) {
+        if (Date.now() > deadline) break;
+        // Let other requests run between pages.
+        if (pageNum % 5 === 0) await new Promise(r => setImmediate(r));
         const page = await doc.getPage(pageNum);
         const content = await page.getTextContent();
 

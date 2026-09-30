@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema({
         trim: true,
         lowercase: true,
         unique: true,
+        maxlength: [254, 'That email is too long'],
         match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'That does not look like a valid email']
     },
     // Never store or return the plain password. select:false means a normal
@@ -34,7 +35,8 @@ const userSchema = new mongoose.Schema({
         default: '',
         trim: true,
         maxlength: 100,
-        match: [/^[\p{L}\s'-]*$/u, 'Name can only contain letters (no numbers or symbols).']
+        // \p{M}: vowel marks (שָׁלוֹם); ׳ ״ ־: Hebrew geresh, gershayim, maqaf (ג׳וני).
+        match: [/^[\p{L}\p{M}\s'\-׳״־]*$/u, 'Name can only contain letters (no numbers or symbols).']
     },
     degree: { type: String, default: '', trim: true, maxlength: 100 },
     // The Home "Getting started" guide was finished or hidden (30/9). Kept
