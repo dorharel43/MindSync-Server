@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const StudyItem = require('../models/StudyItem');
 const Event = require('../models/Event');
+const FileItem = require('../models/FileItem');
 const asyncHandler = require('../middleware/asyncHandler');
 const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
@@ -104,6 +105,95 @@ function pacePattern(reviews) {
   };
 }
 
+// Exam readiness (30/9, reworked the same day). Two separate questions:
+//   coverage  - how much of the course have you practiced?
+//   knowledge - of what you practiced, how much do you know?
+// One number mixed them: someone who practiced 12 of 40 and knew 9 saw
+// "23%", which reads as "you don't know this" when it means "you haven't
+// practiced yet". A course with too little practice gets no verdict at all.
+//
+// Per question, by its LAST answer (one right answer counts at once - the
+// student should see results after the first session):
+//   known     - right, and you said "I'm sure" / "I think so"
+//   fading    - was known, but its review date passed a while ago: memory
+//               fades, so it counts half until it's answered again
+//   shaky     - right while guessing (luck, not knowledge), or partly right
+//   notKnown  - wrong, missed, or "I don't know"
+//   sureWrong - of notKnown: you said "I'm sure" (the dangerous ones)
+//   unseen    - never practiced
+const DAY_MS = 24 * 60 * 60 * 1000;
+const READY = { coverage: 0.8, know: 0.8 };
+const ON_TRACK_KNOW = 0.6;
+const RISK = { days: 14, know: 0.5, perDay: 20, lastDays: 3, lastCoverage: 0.6 };
+
+// Practiced enough to say anything: 10 questions, or a quarter of a small
+// course (at least 3) - never more than the course has.
+function enoughPracticed(practiced, total) {
+  return practiced >= Math.min(total, 10, Math.max(3, Math.ceil(total / 4)));
+}
+
+// A known question fades once its review date is well past: half its gap
+// (at least a day) of grace, so yesterday's answer isn't "fading" today.
+function isFading(item, now) {
+  if (!item.dueDate) return false;
+  const grace = Math.max(1, Math.round((item.interval || 0) / 2)) * DAY_MS;
+  return now - new Date(item.dueDate).getTime() > grace;
+}
+
+function readinessOf(items, exam = null, now = Date.now()) {
+  const r = { total: items.length, known: 0, fading: 0, shaky: 0, notKnown: 0, unseen: 0, sureWrong: 0 };
+  items.forEach(item => {
+    const reviews = item.reviews || [];
+    const last = reviews[reviews.length - 1];
+    if (!last) { r.unseen += 1; return; }
+    const partial = last.outcome === 'partial' || last.outcome === 'stuck';
+    if (last.wasCorrect && (last.confidence === 'sure' || last.confidence === 'think_so')) {
+      if (isFading(item, now)) r.fading += 1; else r.known += 1;
+    } else if (last.wasCorrect || partial) r.shaky += 1;
+    else {
+      r.notKnown += 1;
+      if (last.confidence === 'sure') r.sureWrong += 1;
+    }
+  });
+  const credit = r.known + r.fading / 2;
+  r.practiced = r.total - r.unseen;
+  r.coverage = r.total ? Math.round((r.practiced / r.total) * 100) : 0;
+  // Of what was practiced - null (not 0) before there is anything.
+  r.knowPercent = r.practiced ? Math.round((credit / r.practiced) * 100) : null;
+  // The whole course, unpracticed counting as unknown (kept for older apps).
+  r.percent = r.total ? Math.round((credit / r.total) * 100) : 0;
+  r.enoughData = enoughPracticed(r.practiced, r.total);
+
+  // New questions a day to cover the rest before the exam (the exam day
+  // itself isn't a study day).
+  const daysLeft = exam && Number.isFinite(exam.daysLeft) ? exam.daysLeft : null;
+  r.perDay = daysLeft !== null && r.unseen > 0 ? Math.ceil(r.unseen / Math.max(1, daysLeft)) : null;
+
+  // The verdict. Pace comes first: with the exam close and most of the
+  // course never practiced, that is the risk - however few answers there
+  // are to judge knowledge by.
+  const coverage = r.total ? r.practiced / r.total : 0;
+  const know = r.practiced ? credit / r.practiced : 0;
+  r.reason = null;
+  if (daysLeft !== null && daysLeft <= RISK.days && r.perDay !== null &&
+      (r.perDay > RISK.perDay || (daysLeft <= RISK.lastDays && coverage < RISK.lastCoverage))) {
+    r.status = 'at_risk'; r.reason = 'pace';
+  } else if (r.practiced === 0) {
+    r.status = 'not_started';
+  } else if (!r.enoughData) {
+    r.status = 'too_early';
+  } else if (coverage >= READY.coverage && know >= READY.know) {
+    r.status = 'ready';
+  } else if (daysLeft !== null && daysLeft <= RISK.days && know < RISK.know) {
+    r.status = 'at_risk'; r.reason = 'knowledge';
+  } else if (know >= ON_TRACK_KNOW) {
+    r.status = 'on_track';
+  } else {
+    r.status = 'building';
+  }
+  return r;
+}
+
 // The inverse of "confidently wrong": items you keep doubting yourself on
 // but actually know. "Confidently wrong" tells you where your certainty
 // lies to you; this tells you where your doubt does - both are the app
@@ -113,32 +203,6 @@ function pacePattern(reviews) {
 // Looks at each item's RECENT reviews only (not its whole history) - a
 // single early bad guess shouldn't keep an item flagged forever once the
 // student has clearly settled into knowing it.
-// Exam readiness (30/9): where each question stands, by its LAST answer.
-//   known     - right, and you said "I'm sure" / "I think so"
-//   shaky     - right while guessing (luck, not knowledge), or partly right
-//   notKnown  - wrong, missed, or "I don't know"
-//   unseen    - never practiced
-//   sureWrong - of notKnown: you said "I'm sure" (the dangerous ones)
-// The last answer, not an average: someone who got it wrong twice and has
-// known it since, knows it.
-function readinessOf(items) {
-  const r = { total: items.length, known: 0, shaky: 0, notKnown: 0, unseen: 0, sureWrong: 0 };
-  items.forEach(item => {
-    const reviews = item.reviews || [];
-    const last = reviews[reviews.length - 1];
-    if (!last) { r.unseen += 1; return; }
-    const partial = last.outcome === 'partial' || last.outcome === 'stuck';
-    if (last.wasCorrect && (last.confidence === 'sure' || last.confidence === 'think_so')) r.known += 1;
-    else if (last.wasCorrect || partial) r.shaky += 1;
-    else {
-      r.notKnown += 1;
-      if (last.confidence === 'sure') r.sureWrong += 1;
-    }
-  });
-  r.percent = r.total ? Math.round((r.known / r.total) * 100) : 0;
-  return r;
-}
-
 function findUnderconfidentItems(items) {
   const RECENT_WINDOW = 5;
   // Lowered from 3 - with a small/early deck, no single item accumulates 3
@@ -368,13 +432,27 @@ router.get(
     // course was O(courses x items) - seconds of frozen server with many).
     const itemsByCourse = new Map();
     items.forEach(i => { const k = courseOf(i); if (!itemsByCourse.has(k)) itemsByCourse.set(k, []); itemsByCourse.get(k).push(i); });
+    // Files in a course's folder that no question came from (30/9):
+    // readiness only knows the questions that exist, so material with none
+    // yet is said out loud rather than silently missing. Questions made
+    // from a file carry its folder as their course and its name as source.
+    const filesWithout = {};
+    try {
+      const withSource = new Set(items.map(i => `${courseOf(i)}\u0000${i.sourceFile || ''}`));
+      const files = await FileItem.find({ userId: req.userId, folder: { $in: [...itemsByCourse.keys()] } }).select('name folder').lean();
+      files.forEach(f => {
+        if (!withSource.has(`${f.folder}\u0000${f.name}`)) filesWithout[f.folder] = (filesWithout[f.folder] || 0) + 1;
+      });
+    } catch (err) {
+      console.warn('study stats: file count skipped:', err.message);
+    }
     const subjects = Object.entries(byCategory)
       .map(([name, v]) => {
         const c = plan.byCourse[name] || { dueReviews: 0, newToday: 0, unseen: 0, exam: null };
         return {
           category: name,
           items: v.items,
-          readiness: readinessOf(itemsByCourse.get(name) || []),
+          readiness: { ...readinessOf(itemsByCourse.get(name) || [], c.exam, now.getTime()), filesWithoutQuestions: filesWithout[name] || 0 },
           due: c.dueReviews + c.newToday,
           dueReviews: c.dueReviews,
           newToday: c.newToday,
@@ -514,13 +592,16 @@ router.post(
   '/:id/review',
   asyncHandler(async (req, res) => {
     const { confidence, outcome, secondsSpent } = req.body;
+    // The AI check's own call, if there was one - anything else is ignored.
+    const isOutcome = (v) => typeof v === 'string' && Object.prototype.hasOwnProperty.call(OUTCOME_CORRECT, v);
+    const aiSuggested = isOutcome(req.body.aiSuggested) ? req.body.aiSuggested : null;
 
     // dont_know: the "I don't know" button - always saved as missed/wrong.
     const VALID_CONFIDENCE = ['sure', 'think_so', 'guessing', 'dont_know'];
     if (!VALID_CONFIDENCE.includes(confidence)) {
       throw new ApiError(400, `confidence must be one of: ${VALID_CONFIDENCE.join(', ')}`);
     }
-    if (!(outcome in OUTCOME_CORRECT)) {
+    if (!isOutcome(outcome)) {   // hasOwnProperty: "toString" is `in` every object
       throw new ApiError(400, `outcome must be one of: ${Object.keys(OUTCOME_CORRECT).join(', ')}`);
     }
 
@@ -536,6 +617,7 @@ router.post(
       confidence,
       outcome,
       wasCorrect: OUTCOME_CORRECT[outcome],
+      aiSuggested,
       secondsSpent: Math.min(Math.max(Number(secondsSpent) || 0, 0), 24 * 3600),
       reviewedAt: new Date()
     });

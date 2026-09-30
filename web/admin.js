@@ -53,6 +53,18 @@
         <td class="num">${u.tasks + u.events}</td>
         <td class="num">${u.aiWeek}</td>
       </tr>`).join('');
+    // How often students disagreed with the AI check (30/9).
+    const c = s.aiCheck || { checked: 0, agreed: 0, stricter: 0, kinder: 0 };
+    const pct = (n) => c.checked ? Math.round((n / c.checked) * 100) : 0;
+    const aiCheck = c.checked
+      ? `<div class="tiles">
+          <div class="tile"><b>${c.checked}</b><span>answers the AI checked (30 days)</span></div>
+          <div class="tile"><b>${pct(c.agreed)}%</b><span>students kept the AI's call</span></div>
+          <div class="tile"><b>${pct(c.stricter)}%</b><span>marked themselves lower (the check was too kind?)</span></div>
+          <div class="tile"><b>${pct(c.kinder)}%</b><span>marked themselves higher (the check was too harsh?)</span></div>
+        </div>
+        <div class="hint">${c.checked < 50 ? 'Still few answers - wait for about 50 before reading much into this. ' : ''}If either "marked themselves" number goes past ~10%, the check's instructions need a look.</div>`
+      : '<div class="no">No checked answers yet.</div>';
     const fb = d.feedback.length
       ? d.feedback.map(f => `<div class="fb"><div class="meta">${esc(new Date(f.at).toLocaleString('en-GB', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }))} · ${esc(f.from)}${f.page ? ' · ' + esc(f.page) : ''}</div><div class="text" dir="auto">${esc(f.text)}</div></div>`).join('')
       : '<div class="no">No feedback yet.</div>';
@@ -67,6 +79,8 @@
         <thead><tr><th>Name</th><th>Email</th><th>Signed up</th><th>Last active</th><th>Days active</th><th>Came back</th><th>Files</th><th>Questions</th><th>Answers</th><th>Calendar + tasks</th><th>AI this week</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="11" class="no">Nobody yet.</td></tr>'}</tbody>
       </table></div>
+      <h2>The AI answer check vs the students</h2>
+      <div class="card">${aiCheck}</div>
       <h2>Latest feedback</h2>
       <div class="card">${fb}</div>`;
   }
