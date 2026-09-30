@@ -548,7 +548,8 @@ router.post(
         solutionSource: ['document', 'ai', 'user', 'imported', 'none'].includes(i.solutionSource) ? i.solutionSource : 'document',
         skillTag: fit(i.skillTag, 120),
         category: fit(i.category, 100),
-        sourceFile: fit(i.sourceFile, 300)
+        sourceFile: fit(i.sourceFile, 300),
+        twinOf: typeof i.twinOf === 'string' && /^[a-f0-9]{24}$/i.test(i.twinOf) ? i.twinOf : null
       })),
       { ordered: false } // one bad item shouldn't reject the whole batch
     );
