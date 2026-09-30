@@ -302,8 +302,8 @@ router.get(
         const he = lang === 'he';
         if (!p || p.purpose !== 'verify-email' || typeof p.sub !== 'string') {
             return resultPage(res, 400, lang, he ? 'הקישור לא תקף' : 'This link doesn\'t work',
-                he ? 'יכול להיות שעברו יותר מ-3 ימים. אפשר לבקש מייל חדש מהגדרות ← פרופיל באפליקציה.'
-                   : 'It may be more than 3 days old. You can ask for a new one in Settings > Profile in the app.');
+                he ? 'יכול להיות שעברו יותר מ-3 ימים. אפשר לבקש מייל חדש בהגדרות ← חשבון באפליקציה.'
+                   : 'It may be more than 3 days old. You can ask for a new one in Settings > Account in the app.');
         }
         const user = await User.findById(p.sub);
         if (!user || user.email !== p.email) {
