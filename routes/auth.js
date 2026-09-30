@@ -12,12 +12,21 @@ const limits = require('../middleware/rateLimit');
 // from the campus Wi-Fi shares one address, so per-address limits are
 // generous; the per-EMAIL limit is what stops password guessing.
 const n = (v, d) => Number(v) || d;
-const REG_PER_IP_HOUR = n(process.env.REGISTER_PER_IP_HOUR, 12);
+const REG_PER_IP_HOUR = n(process.env.REGISTER_PER_IP_HOUR, 60);   // a whole class on one campus Wi-Fi
 const REG_PER_DAY = n(process.env.REGISTER_PER_DAY, 300);
-const LOGIN_PER_IP_15M = n(process.env.LOGIN_PER_IP_15MIN, 60);
+const LOGIN_PER_IP_15M = n(process.env.LOGIN_PER_IP_15MIN, 200);
 const LOGIN_FAILS_PER_EMAIL_15M = 8;
 const DELETE_FAILS_15M = 5;
 const MIN15 = 15 * 60 * 1000;
+
+// Once per start-up: what the server sees as the visitor's address, so the
+// per-address limits can be checked on Render (behind its proxy).
+let ipLogged = false;
+function logIpOnce(req) {
+    if (ipLogged) return;
+    ipLogged = true;
+    console.log(`ℹ️ client address check: ip=${req.ip} ips=${JSON.stringify(req.ips)} xff=${req.headers['x-forwarded-for'] || ''}`);
+}
 
 const registerLimit = limits.rateLimit({
     name: 'register-ip', windowMs: 60 * 60 * 1000, max: REG_PER_IP_HOUR, key: limits.byIp,
@@ -67,7 +76,7 @@ function publicUser(user) {
 // POST /api/auth/register   { email, password, name?, degree? }
 router.post(
     '/register',
-    registerLimit, registerDaily,
+    (req, res, next) => { logIpOnce(req); next(); }, registerLimit, registerDaily,
     asyncHandler(async (req, res) => {
         const { email, password } = readCredentials(req.body);
         const name = typeof req.body.name === 'string' ? req.body.name : undefined;
@@ -94,7 +103,7 @@ router.post(
 
         const user = new User({ email, name, degree });
         await user.setPassword(password);
-        await user.save();
+        await user.save({ validateModifiedOnly: true });
 
         res.status(201).json({ token: issueToken(user), user: publicUser(user) });
     })
@@ -103,7 +112,7 @@ router.post(
 // POST /api/auth/login   { email, password }
 router.post(
     '/login',
-    loginLimit,
+    (req, res, next) => { logIpOnce(req); next(); }, loginLimit,
     asyncHandler(async (req, res) => {
         const { email, password } = readCredentials(req.body);
         if (!email || !password) {
@@ -169,7 +178,7 @@ router.put(
         const user = await User.findById(req.userId);
         if (!user) throw new ApiError(404, 'User not found.');
         Object.entries({ name, degree, guideDone }).forEach(([k, v]) => { if (v !== undefined) user[k] = v; });
-        await user.save();
+        await user.save({ validateModifiedOnly: true });
         res.json(publicUser(user));
     })
 );
@@ -196,7 +205,7 @@ router.post(
         }
         await user.setPassword(next);
         user.tokenVersion = (user.tokenVersion || 0) + 1;
-        await user.save();
+        await user.save({ validateModifiedOnly: true });
         setTokenVersion(user._id, user.tokenVersion);
         res.json({ token: issueToken(user), user: publicUser(user) });
     })

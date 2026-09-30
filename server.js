@@ -32,7 +32,7 @@ const PORT = process.env.PORT || 5000; // Render (and most hosts) inject PORT - 
 // Needed on Render/Heroku/etc. so Express reads the real client info from
 // the X-Forwarded-* headers the platform's proxy sets, instead of seeing
 // every request as coming from the proxy itself.
-app.set('trust proxy', 1);
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS) || 1);   // hops of proxies in front (Render: check the start-up log line "client address check")
 
 // ==========================================
 // Middlewares
@@ -140,6 +140,22 @@ async function connectDB() {
   }
 }
 connectDB();
+
+// Housekeeping (30/9), a minute after start and then daily: stored files no
+// file record points to, and indexes brought in line with the models (the
+// per-user Settings index became unique; an old non-unique one with the
+// same name would otherwise stay).
+async function housekeeping() {
+  try {
+    const n = await require('./rpc/storage').sweepOrphans();
+    if (n) console.log(`🧹 Removed ${n} stored file(s) nothing pointed to.`);
+  } catch (err) { console.warn('housekeeping (files):', err.message); }
+  try { await require('./models/Settings').syncIndexes(); } catch (err) { console.warn('housekeeping (indexes):', err.message); }
+}
+mongoose.connection.once('open', () => {
+  setTimeout(housekeeping, 60 * 1000).unref();
+  setInterval(housekeeping, 24 * 60 * 60 * 1000).unref();
+});
 
 mongoose.connection.on('error', (err) => console.error('❌ MongoDB runtime error:', err.message));
 mongoose.connection.on('disconnected', () => console.warn('⚠️  MongoDB disconnected. Mongoose will retry automatically.'));

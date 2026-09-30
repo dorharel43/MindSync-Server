@@ -274,8 +274,12 @@
     // buttons stuck on "Saving…" / "Uploading…" when the connection dropped
     // or the server was waking up. (A 401 still reloads to the login.)
     const LIST_CHANNELS = new Set(['get-tasks', 'get-events', 'get-folders', 'get-files', 'get-files-light',
-        'get-study-items', 'get-due-study-items', 'get-study-categories', 'get-blocked-apps']);
+        'get-study-items', 'get-due-study-items', 'get-study-categories', 'get-task-categories', 'get-blocked-apps']);
     const NULL_CHANNELS = new Set(['get-study-stats', 'get-profile']);
+    // These answer with JSON TEXT (the renderer JSON.parse()s it) - so a
+    // failure is JSON text too, or the real reason became "not valid JSON".
+    const JSON_TEXT_CHANNELS = new Set(['add-smart-task', 'parse-smart-event', 'generate-weekly-plan',
+        'generate-study-items', 'generate-study-items-pdf']);
     async function invoke(name, ...args) {
         if (local[name]) return local[name](...args);
         await whenLoggedIn;
@@ -287,6 +291,7 @@
             const strict = args[0] && typeof args[0] === 'object' && args[0].strict;
             if (LIST_CHANNELS.has(name) && !strict) return [];
             if (NULL_CHANNELS.has(name)) return null;
+            if (JSON_TEXT_CHANNELS.has(name)) return JSON.stringify({ error: err.message });
             return { error: err.message };
         }
     }

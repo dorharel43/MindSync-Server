@@ -1154,9 +1154,9 @@ ipcMain.handle('add-smart-task', async (event, freeText, category = '', options 
         // worst case the urgency briefly reads as one level calmer than it
         // should, never scarier.
         const task = {
-            title: cleanTitle,
+            title: String(cleanTitle || '').slice(0, 300),   // the server's limit (30/9)
             date: targetDate,
-            category: category || '',
+            category: String(category || '').slice(0, 100),
             urgency: "Normal",
             estimatedMinutes: durationMinutes || undefined
         };
@@ -2045,7 +2045,10 @@ ipcMain.handle('update-study-item', async (event, id, updates) => {
 });
 
 ipcMain.handle('get-study-items', async (event, opts = {}) => {
-    try { return await api.getStudyItems(opts); } catch (err) { console.error('get-study-items failed:', err.message); return []; }
+    try { return await api.getStudyItems(opts); } catch (err) {
+        console.error('get-study-items failed:', err.message);
+        return opts && opts.strict ? { error: err.message } : [];
+    }
 });
 
 ipcMain.handle('delete-all-study-items', async () => {

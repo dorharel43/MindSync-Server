@@ -123,4 +123,24 @@ async function removeAllForUser(userId) {
     return files.length;
 }
 
-module.exports = { save, read, readSource, remove, removeAllForUser, parseId, MAX_FILE_BYTES, USER_CAP_BYTES, PREFIX };
+// Stored originals that no file in the app points to any more (30/9): left
+// behind by older versions (delete / reset didn't remove them) or by an
+// upload that was never saved. They count against the owner's storage
+// with no way to free it. Only files older than a day - a fresh upload's
+// file record is created a moment after the upload itself.
+async function sweepOrphans(olderThanMs = 24 * 60 * 60 * 1000) {
+    const db = mongoose.connection.db;
+    const cutoff = new Date(Date.now() - olderThanMs);
+    const files = await db.collection('uploads.files').find({ uploadDate: { $lt: cutoff } }, { projection: { _id: 1 } }).toArray();
+    if (!files.length) return 0;
+    const FileItem = require('../models/FileItem');
+    const used = new Set((await FileItem.find({ sourcePath: { $regex: '^server:' } }).select('sourcePath').lean()).map(f => f.sourcePath));
+    let removed = 0;
+    for (const f of files) {
+        if (used.has(PREFIX + String(f._id))) continue;
+        await bucket().delete(f._id).then(() => { removed += 1; }, () => {});
+    }
+    return removed;
+}
+
+module.exports = { save, read, readSource, remove, removeAllForUser, sweepOrphans, parseId, MAX_FILE_BYTES, USER_CAP_BYTES, PREFIX };

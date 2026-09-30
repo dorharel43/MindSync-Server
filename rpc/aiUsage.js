@@ -14,7 +14,7 @@
 //   AI_DAILY_HEAVY  (15)   whole-file jobs per user: questions, summaries, syllabi
 //   AI_DAILY_LIGHT  (150)  short jobs per user: grading an answer, reading a date
 //   AI_GLOBAL_DAILY_HEAVY (400) / AI_GLOBAL_DAILY_LIGHT (4000)  all users together
-//   AI_MAX_PARALLEL (2)    AI jobs running at once per user
+//   AI_MAX_PARALLEL (2)    whole-file AI jobs running at once per user
 const AiUsage = require('../models/AiUsage');
 const { todayIso } = require('../utils/examSchedule');
 const { currentContext } = require('./context');
@@ -85,8 +85,13 @@ async function incUser(userId, day, kind, by) {
 async function reserve(kind) {
     const userId = currentUserId();
     if (!userId) return null;
-    if ((running.get(userId) || 0) >= MAX_PARALLEL) throw new AiLimitError(kind, 'busy');
-    running.set(userId, (running.get(userId) || 0) + 1);   // before any await: no race
+    // At once: only whole-file jobs are limited (30/9) - the short ones
+    // (e.g. the urgency check after each new task) made "Make questions"
+    // say "another job is running". Short jobs are bounded by the daily
+    // count, which is atomic.
+    const limitParallel = kind === 'heavy';
+    if (limitParallel && (running.get(userId) || 0) >= MAX_PARALLEL) throw new AiLimitError(kind, 'busy');
+    if (limitParallel) running.set(userId, (running.get(userId) || 0) + 1);   // before any await: no race
     const day = todayIso();
     try {
         const g = await globalCounts(day);
@@ -98,9 +103,9 @@ async function reserve(kind) {
             await incUser(userId, day, kind, -1).catch(() => {});
             throw new AiLimitError(kind);
         }
-        return { userId, day, kind };
+        return { userId, day, kind, counted: limitParallel };
     } catch (err) {
-        running.set(userId, Math.max(0, (running.get(userId) || 1) - 1));
+        if (limitParallel) running.set(userId, Math.max(0, (running.get(userId) || 1) - 1));
         throw err;
     }
 }
@@ -109,7 +114,7 @@ async function reserve(kind) {
 // didn't do the work).
 async function release(ticket, refund) {
     if (!ticket) return;
-    running.set(ticket.userId, Math.max(0, (running.get(ticket.userId) || 1) - 1));
+    if (ticket.counted) running.set(ticket.userId, Math.max(0, (running.get(ticket.userId) || 1) - 1));
     if (!refund) return;
     if (globalDay === ticket.day && globalUsed && !globalUsed.then) globalUsed[ticket.kind] = Math.max(0, (globalUsed[ticket.kind] || 0) - 1);
     await incUser(ticket.userId, ticket.day, ticket.kind, -1).catch(err => console.warn('AI usage refund failed:', err.message));

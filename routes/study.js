@@ -549,7 +549,7 @@ router.post(
     item.lapses = next.lapses;
     item.dueDate = next.dueDate;
 
-    await item.save();
+    await item.save({ validateModifiedOnly: true });
 
     res.json({
       item,

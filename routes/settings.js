@@ -40,7 +40,7 @@ router.post(
     if (settings.blockedApps.length >= 100) throw new ApiError(400, 'The block list is full (100 apps).');
     if (!settings.blockedApps.includes(appName)) {
       settings.blockedApps.push(appName);
-      await settings.save();
+      await settings.save({ validateModifiedOnly: true });
     }
     res.status(201).json(settings.blockedApps);
   })
@@ -52,7 +52,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const settings = await getSettingsForUser(req.userId);
     settings.blockedApps = settings.blockedApps.filter((a) => a !== req.params.appName);
-    await settings.save();
+    await settings.save({ validateModifiedOnly: true });
     res.json(settings.blockedApps);
   })
 );

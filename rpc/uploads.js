@@ -15,7 +15,7 @@ const { extractPdfText } = require('./pdfExtract');
 const router = express.Router();
 const limits = require('../middleware/rateLimit');
 const uploadLimit = limits.rateLimit({
-    name: 'upload-user', windowMs: 10 * 60 * 1000, max: Number(process.env.UPLOADS_PER_10MIN) || 60, key: limits.byUser,
+    name: 'upload-user', windowMs: 10 * 60 * 1000, max: Number(process.env.UPLOADS_PER_10MIN) || 150, key: limits.byUser,
     message: 'Too many uploads in a short time. Wait a few minutes and try again.'
 });
 // Reading a PDF's text is CPU work; at most 2 at a time for the whole server.
@@ -56,7 +56,16 @@ router.post('/', requireAuth, uploadLimit,
                     // read the stored original directly.
                     console.warn('upload: text extraction failed:', err.message);
                 }
-                filePath = await storage.save(req.userId, name, buffer, 'application/pdf', { numPages: info.numPages || null });
+                // Storage full (the user's or everyone's): keep the TEXT anyway
+                // (30/9 - the whole upload used to fail). Only reading the
+                // PDF itself (tables, formulas) isn't possible for this file.
+                try {
+                    filePath = await storage.save(req.userId, name, buffer, 'application/pdf', { numPages: info.numPages || null });
+                } catch (err) {
+                    if (!(err.status === 413 || err.status === 507) || !fileContent.trim()) throw err;
+                    console.warn('upload: original not stored:', err.message);
+                    return res.status(201).json({ fileName: name, fileContent, filePath: '', warning: err.message });
+                }
             } else {
                 fileContent = buffer.toString('utf-8').slice(0, 1500000);
             }
