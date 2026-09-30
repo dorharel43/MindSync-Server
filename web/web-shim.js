@@ -167,9 +167,9 @@
                 return { success: true, user };
             } catch (err) { return { error: err.message }; }
         },
-        'auth-register': async ({ email, password, name, degree }) => {
+        'auth-register': async ({ email, password, name, degree, lang }) => {
             try {
-                const { token, user } = await api('POST', '/auth/register', { email, password, name, degree }, { auth: false });
+                const { token, user } = await api('POST', '/auth/register', { email, password, name, degree, lang }, { auth: false });
                 setToken(token);
                 return { success: true, user };
             } catch (err) { return { error: err.message }; }

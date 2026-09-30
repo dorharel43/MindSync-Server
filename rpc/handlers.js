@@ -1711,6 +1711,12 @@ ipcMain.handle('save-profile', async (event, profileData) => {
   } catch (err) { return { error: err.message }; }
 });
 
+// A new confirmation email (30/9) - in Profile so the web version gets it
+// too. { sent } / { alreadyVerified } / { error }.
+ipcMain.handle('auth-resend-verification', async () => {
+  try { return await api.resendVerification(); } catch (err) { return { error: err.message }; }
+});
+
 // =====================================
 // Tasks
 // =====================================
