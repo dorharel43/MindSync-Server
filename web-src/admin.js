@@ -121,17 +121,28 @@
         : '<option value="">no AI key on the server</option>';
     }).catch(() => { sel.innerHTML = '<option value="">(default)</option>'; });
     if (runs.length) renderRuns(out);
+    const auth = { authorization: `Bearer ${token}` };
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     btn.onclick = async () => {
-      btn.disabled = true; btn.textContent = 'Running… (1-2 min)';
+      btn.disabled = true; btn.textContent = 'Starting…';
       try {
         const res = await fetch('/api/admin/ai-check', {
-          method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          method: 'POST', headers: { 'content-type': 'application/json', ...auth },
           body: JSON.stringify({ model: sel.value || undefined, generation: document.getElementById('aiq-gen').checked })
         });
         const d = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error((d.error && d.error.message) || `HTTP ${res.status}`);
-        runs.unshift(d);
-        renderRuns(out);
+        // It runs on the server; ask how far it got every few seconds.
+        for (;;) {
+          await sleep(2500);
+          const job = await fetch('/api/admin/ai-check', { headers: auth }).then(r => r.json());
+          btn.textContent = `Running… ${job.done || 0} of ${job.total || '?'}`;
+          if (!job.running) {
+            if (job.error) throw new Error(job.error);
+            if (job.result) { runs.unshift(job.result); renderRuns(out); }
+            break;
+          }
+        }
       } catch (err) {
         out.innerHTML = `<p class="bad">Could not run the check: ${esc(err.message)}</p>`;
       }

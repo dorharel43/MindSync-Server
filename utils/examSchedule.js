@@ -50,6 +50,9 @@ function normalize(s) {
     return String(s || '').toLowerCase()
         // Quote marks INSIDE a word are part of it: חדו"א, ג'אווה -> חדוא, גאווה
         .replace(/(\p{L})["'`׳״](?=\p{L})/gu, '$1')
+        // A Hebrew prefix letter joined by a hyphen is part of the next word:
+        // "תכנות ב-C" is "תכנות C", not the course numbered "ב".
+        .replace(/(^|\s)[בלהמושכ][-־](?=\S)/g, '$1')
         // A dot or slash between digits is a number or date (12.2, 1/2): keep
         .replace(/(\d)[./](?=\d)/g, '$1\u2024')
         .replace(/["'`׳״.,:;!?()\[\]{}]/g, ' ')
@@ -79,16 +82,33 @@ function titleForms(word) {
 // "בסטטיסטיקה" / "לסטטיסטיקה"). ALL words, not any: "מבני נתונים" must not
 // match an exam in "מסדי נתונים" just because of "נתונים". Numbers and
 // letters that number a course ("2", "II", "ב'") must be there exactly.
-function examMatchesCourse(examTitle, course) {
+// Words after which a number or letter numbers the SITTING, not the course:
+// "אלגברה א' מועד ב'", "Calculus 1 midterm 2".
+const SITTING_WORDS = new Set(['מועד', 'מבחן', 'בוחן', 'בחינה', 'סמסטר', 'חלק', 'moed', 'exam', 'midterm', 'quiz', 'test', 'semester', 'part', 'term']);
+
+// opts.numberOptional: a title with NO course number at all ("מבחן בחדו"א")
+// may still belong to "חדו"א 2" - nextExamByCourse allows it only when the
+// student has no other course of that name.
+function examMatchesCourse(examTitle, course, opts = {}) {
     const titleWords = new Set();
-    for (const w of normalize(examTitle).split(' ')) if (w) titleForms(w).forEach(f => titleWords.add(f));
+    const raw = normalize(examTitle).split(' ').filter(Boolean);
+    let titleHasNumber = false;
+    raw.forEach((w, i) => {
+        if (isMarker(w) && i > 0 && SITTING_WORDS.has(raw[i - 1])) return;   // "מועד ב", "midterm 2"
+        if (/^\d+[a-z\u05d0-\u05ea]?$/.test(w) || ROMAN.has(w)) titleHasNumber = true;
+        titleForms(w).forEach(f => titleWords.add(f));
+        // "1A" / "2b" also carries the course number ("Physics 1A" is Physics 1)
+        const m = /^(\d+)[a-z\u05d0-\u05ea]$/.exec(w);
+        if (m) titleWords.add(m[1]);
+    });
     const all = normalize(course).split(' ').filter(Boolean);
     let words = all.filter(w => isMarker(w) || (w.length > 1 && !GENERIC_WORDS.has(w) && !GENERIC_WORDS.has(w.length > 3 ? w.replace(HEBREW_PREFIX, '') : w)));
     // Only generic words ("מבוא"): then those have to do.
     if (!words.some(w => !isMarker(w))) words = all;
     if (!words.length) return false;
+    const skipMarkers = opts.numberOptional && !titleHasNumber;
     return words.every((w) => {
-        if (isMarker(w)) return titleWords.has(w);
+        if (isMarker(w)) return skipMarkers || titleWords.has(w);
         const bare = w.length > 3 ? w.replace(HEBREW_PREFIX, '') : w;
         return titleWords.has(w) || titleWords.has(bare);
     });
@@ -101,8 +121,14 @@ function nextExamByCourse(courses, exams, today) {
         .filter(e => e && e.date && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.date >= today)
         .sort((a, b) => a.date.localeCompare(b.date));
     const result = {};
+    // "חדו"א 2" -> "חדוא": courses that differ only by their number.
+    const base = (c) => normalize(c).split(' ').filter(w => w && !isMarker(w)).join(' ');
+    const sameBase = new Map();
+    for (const c of courses) sameBase.set(base(c), (sameBase.get(base(c)) || 0) + 1);
     for (const course of courses) {
-        const hit = upcoming.find(e => examMatchesCourse(e.title, course));
+        const alone = sameBase.get(base(course)) === 1;
+        const hit = upcoming.find(e => examMatchesCourse(e.title, course))
+            || (alone ? upcoming.find(e => examMatchesCourse(e.title, course, { numberOptional: true })) : null);
         if (hit) result[course] = { title: hit.title, date: hit.date, daysLeft: daysBetween(today, hit.date) };
     }
     return result;

@@ -23,9 +23,12 @@ const examRunSchema = new mongoose.Schema({
     answers: { type: [answerSchema], default: [] },
     checked: { type: Number, default: 0 },               // answers in the score
     score: { type: Number, min: 0, max: 100, default: 0 },
-    margin: { type: Number, min: 0, max: 100, default: 0 }
+    margin: { type: Number, min: 0, max: 100, default: 0 },
+    // Made by the app per run: the same run sent twice is saved once.
+    clientRunId: { type: String, maxlength: 40 }
 });
 
 examRunSchema.index({ userId: 1, course: 1, finishedAt: -1 });
+examRunSchema.index({ userId: 1, clientRunId: 1 });
 
 module.exports = mongoose.model('ExamRun', examRunSchema);

@@ -156,8 +156,9 @@
             try {
                 const user = await api('GET', '/auth/me', undefined, { reloadOn401: false });
                 return { loggedIn: true, user };
-            } catch {
-                return { loggedIn: false };
+            } catch (err) {
+                // offline: the server couldn't be asked - not "logged out" (30/9)
+                return /can't reach/i.test(String((err && err.message) || '')) ? { loggedIn: false, offline: true } : { loggedIn: false };
             }
         },
         'auth-login': async ({ email, password }) => {

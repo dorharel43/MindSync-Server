@@ -277,7 +277,9 @@ function findGenuineDifficultyItems(items) {
 const ExamRun = require('../models/ExamRun');
 // A file that IS a past exam: its questions are the closest thing to the
 // real one, so they come first.
-const PAST_EXAM_FILE = /מבחן|בחינה|מועד|בוחן|exam|midterm|final|quiz/i;
+const PAST_EXAM_FILE = /מבחן|בחינה|מועד|בוחן|\bexams?\b|midterm|quiz|final exam/i;
+// ...and not a twin (AI-written after a mistake) that inherited such a file name.
+const isPastExam = (i) => !i.twinOf && PAST_EXAM_FILE.test(i.sourceFile || '');
 const shuffled = (list) => { const a = list.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
 // GET /api/study/exam/pick?course=...&count=15
@@ -291,7 +293,7 @@ router.get(
       .filter(i => courseOf(i) === course || (i.category || '') === course);
     // Past-exam questions first (up to half), then the rest spread across
     // topics - a real exam covers the course, not one chapter.
-    const past = shuffled(all.filter(i => PAST_EXAM_FILE.test(i.sourceFile || '')));
+    const past = shuffled(all.filter(isPastExam));
     const picked = past.slice(0, Math.ceil(count / 2));
     const byTopic = new Map();
     for (const i of shuffled(all.filter(i => !picked.includes(i)))) {
@@ -306,7 +308,7 @@ router.get(
     res.json(shuffled(picked).map(i => ({
       id: String(i._id), question: i.question, answer: i.answer || i.mySolution || '', mode: i.mode,
       solutionSource: i.solutionSource, skillTag: i.skillTag || '', sourceFile: i.sourceFile || '',
-      fromPastExam: PAST_EXAM_FILE.test(i.sourceFile || '')
+      fromPastExam: isPastExam(i)
     })));
   })
 );
@@ -334,12 +336,23 @@ router.post(
     if (!course || !raw.length) throw new ApiError(400, 'course and answers are required');
     const VERDICTS = ['correct', 'partial', 'wrong', 'blank', 'unchecked'];
     const CONF = ['sure', 'think_so', 'guessing', 'none'];
-    const ids = raw.map(a => a && a.itemId).filter(id => typeof id === 'string' && /^[a-f0-9]{24}$/i.test(id));
-    const items = await StudyItem.find({ _id: { $in: ids }, userId: req.userId });
+    // Sent twice (a retry after a timeout): the first one stands.
+    const clientRunId = typeof req.body.clientRunId === 'string' ? req.body.clientRunId.slice(0, 40) : null;
+    if (clientRunId) {
+      const already = await ExamRun.findOne({ userId: req.userId, clientRunId });
+      if (already) return res.status(200).json(already);
+    }
+    const ids = [...new Set(raw.map(a => a && a.itemId).filter(id => typeof id === 'string' && /^[a-f0-9]{24}$/i.test(id)))];
+    // Only this course's questions count toward this course's score.
+    const items = (await StudyItem.find({ _id: { $in: ids }, userId: req.userId }))
+      .filter(i => courseOf(i) === course || (i.category || '') === course);
     const byId = new Map(items.map(i => [String(i._id), i]));
+    const seen = new Set();
     const answers = raw.map(a => {
-      const item = a && byId.get(String(a.itemId));
-      if (!item) return null;
+      const id = a && String(a.itemId);
+      const item = id && byId.get(id);
+      if (!item || seen.has(id)) return null;   // each question once
+      seen.add(id);
       return {
         itemId: item._id,
         question: String(item.question || '').slice(0, 600),
@@ -348,9 +361,20 @@ router.post(
         verdict: VERDICTS.includes(a.verdict) ? a.verdict : 'unchecked'
       };
     }).filter(Boolean);
-    if (!answers.length) throw new ApiError(400, 'None of these questions were found');
+    if (!answers.length) throw new ApiError(400, 'None of these questions were found in this course');
 
-    // Each checked answer is practice too.
+    const started = new Date(req.body.startedAt);
+    // The run first; then each checked answer counts as practice too (a
+    // failure in between leaves a run without practice, never the reverse).
+    const run = await ExamRun.create({
+      userId: req.userId, course, clientRunId,
+      startedAt: Number.isNaN(started.getTime()) ? new Date() : started,
+      finishedAt: new Date(),
+      limitSec: Math.max(0, Math.min(Number(req.body.limitSec) || 0, 6 * 3600)),
+      usedSec: Math.max(0, Math.min(Number(req.body.usedSec) || 0, 6 * 3600)),
+      answers,
+      ...examScore(answers)
+    });
     for (const a of answers) {
       if (a.verdict === 'unchecked') continue;
       const item = byId.get(String(a.itemId));
@@ -359,20 +383,12 @@ router.post(
         : a.verdict === 'partial' ? (practice ? 'stuck' : 'partial')
           : (practice ? 'wrong' : 'missed');
       const confidence = a.verdict === 'blank' || a.confidence === 'none' ? 'dont_know' : a.confidence;
+      // aiSuggested stays empty: nobody could overrule the check in an exam,
+      // so it would read as "agreed with the AI" on the owner's page.
       try {
-        await recordReview(req.userId, item, { confidence, outcome, aiSuggested: a.verdict === 'blank' ? null : outcome });
+        await recordReview(req.userId, item, { confidence, outcome });
       } catch (err) { console.warn('mock exam: review not saved:', err.message); }
     }
-
-    const run = await ExamRun.create({
-      userId: req.userId, course,
-      startedAt: req.body.startedAt ? new Date(req.body.startedAt) : new Date(),
-      finishedAt: new Date(),
-      limitSec: Math.max(0, Math.min(Number(req.body.limitSec) || 0, 6 * 3600)),
-      usedSec: Math.max(0, Math.min(Number(req.body.usedSec) || 0, 6 * 3600)),
-      answers,
-      ...examScore(answers)
-    });
     // History: the last 20 per course.
     const old = await ExamRun.find({ userId: req.userId, course }).sort({ finishedAt: -1 }).skip(20).select('_id').lean();
     if (old.length) await ExamRun.deleteMany({ _id: { $in: old.map(o => o._id) } });
