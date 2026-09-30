@@ -51,10 +51,11 @@ function serialized(userId, fn) {
 }
 
 // Returns "server:<id>".
-function save(userId, name, buffer, contentType) {
-    return serialized(userId, () => saveNow(userId, name, buffer, contentType));
+// extra: more metadata to keep with the file (e.g. { numPages }).
+function save(userId, name, buffer, contentType, extra = {}) {
+    return serialized(userId, () => saveNow(userId, name, buffer, contentType, extra));
 }
-async function saveNow(userId, name, buffer, contentType) {
+async function saveNow(userId, name, buffer, contentType, extra = {}) {
     if (buffer.length > MAX_FILE_BYTES) {
         const err = new Error(`This file is ${(buffer.length / 1048576).toFixed(0)}MB - the limit is ${MAX_FILE_BYTES / 1048576}MB. Split it into smaller files.`);
         err.status = 413;
@@ -72,7 +73,7 @@ async function saveNow(userId, name, buffer, contentType) {
         throw err;
     }
     const id = await new Promise((resolve, reject) => {
-        const up = bucket().openUploadStream(name, { metadata: { userId: String(userId), contentType } });
+        const up = bucket().openUploadStream(name, { metadata: { ...extra, userId: String(userId), contentType } });
         Readable.from(buffer).pipe(up).on('error', reject).on('finish', () => resolve(up.id));
     });
     return PREFIX + String(id);
@@ -94,7 +95,10 @@ async function read(sourcePath, userId) {
     await new Promise((resolve, reject) => {
         bucket().openDownloadStream(id).on('data', c => chunks.push(c)).on('error', reject).on('end', resolve);
     });
-    return Buffer.concat(chunks);
+    const buf = Buffer.concat(chunks);
+    // The page count travels with the bytes (checked before the AI reads it).
+    if (meta.metadata && meta.metadata.numPages) buf.numPages = meta.metadata.numPages;
+    return buf;
 }
 
 // Used by the ported handlers: the current request's user.

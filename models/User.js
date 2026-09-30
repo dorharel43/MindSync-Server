@@ -43,7 +43,12 @@ const userSchema = new mongoose.Schema({
     // here, not in the browser: the guide's steps are worked out from what
     // exists now ("any questions?"), so deleting every question made it
     // come back - and a new phone/browser would show it again too.
-    guideDone: { type: Boolean, default: false }
+    guideDone: { type: Boolean, default: false },
+    // Goes up when the password changes (30/9). Every login token carries
+    // the version it was made with; an older one stops working - so changing
+    // the password logs out every other device (and anyone holding a stolen
+    // token).
+    tokenVersion: { type: Number, default: 0 }
 }, {
     timestamps: true
 });

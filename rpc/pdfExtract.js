@@ -143,7 +143,9 @@ function assembleLine(items) {
  * @returns {Promise<string>}
  */
 // SERVER VERSION: accepts a Buffer (an uploaded file) as well as a path.
-async function extractPdfText(filePath) {
+// info (optional): filled with { numPages } - saved with the upload so the
+// AI path can refuse a PDF with too many pages (30/9).
+async function extractPdfText(filePath, info) {
     const pdfjs = await loadPdfjs();
 
     const data = (Buffer.isBuffer(filePath) ? new Uint8Array(filePath) : new Uint8Array(fs.readFileSync(filePath)));
@@ -159,6 +161,7 @@ async function extractPdfText(filePath) {
     });
 
     const doc = await loadingTask.promise;
+    if (info) info.numPages = doc.numPages;
     const pages = [];
 
     // Bounded (30/9): a crafted PDF with thousands of pages used to keep the

@@ -48,14 +48,15 @@ router.post('/', requireAuth, uploadLimit,
             let filePath = '';
             if (ext === 'pdf') {
                 if (buffer.slice(0, 5).toString() !== '%PDF-') throw new ApiError(415, 'This doesn\'t look like a PDF file.');
+                const info = {};
                 try {
-                    fileContent = String(await withExtractSlot(() => extractPdfText(buffer)) || '').slice(0, 1500000);
+                    fileContent = String(await withExtractSlot(() => extractPdfText(buffer, info)) || '').slice(0, 1500000);
                 } catch (err) {
                     // A scanned or unusual PDF: no text, but the AI can still
                     // read the stored original directly.
                     console.warn('upload: text extraction failed:', err.message);
                 }
-                filePath = await storage.save(req.userId, name, buffer, 'application/pdf');
+                filePath = await storage.save(req.userId, name, buffer, 'application/pdf', { numPages: info.numPages || null });
             } else {
                 fileContent = buffer.toString('utf-8').slice(0, 1500000);
             }

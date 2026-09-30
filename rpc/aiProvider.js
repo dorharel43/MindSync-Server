@@ -682,9 +682,18 @@ async function generateText(prompt, options = {}) {
  *
  * @param {Buffer} pdfBuffer
  */
+// A PDF read whole costs ~1,100 tokens a PAGE, whatever is on it - a tiny
+// file with a thousand blank pages is a million-token call (30/9). Longer
+// files are refused here; the callers then use the text extracted at upload.
+const MAX_AI_PDF_PAGES = Number(process.env.AI_PDF_MAX_PAGES) || 150;
 async function generateFromPdf(pdfBuffer, prompt, options = {}) {
     if (resolveProvider() !== 'gemini') {
         throw new Error('Reading PDFs directly requires a Gemini API key. Add one in Settings.');
+    }
+    if (pdfBuffer && pdfBuffer.numPages > MAX_AI_PDF_PAGES) {
+        const err = new Error(`This PDF has ${pdfBuffer.numPages} pages - too many to read whole (${MAX_AI_PDF_PAGES} at most). Using the text from it instead.`);
+        err.tooManyPages = true;
+        throw err;
     }
 
     const parts = [

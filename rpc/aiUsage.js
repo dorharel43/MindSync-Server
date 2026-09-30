@@ -118,6 +118,7 @@ async function release(ticket, refund) {
 // Google didn't do (or bill) the work: busy, rate-limited, unreachable.
 function notBilled(err) {
     if (!err || err.aiLimit) return true;
+    if (err.tooManyPages) return true;   // refused before anything was sent
     if (err.overloaded) return true;
     const status = Number(err.status || err.statusCode || 0);
     if (status === 429 || status === 503 || status === 502 || status === 500) return true;

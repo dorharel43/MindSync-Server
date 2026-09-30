@@ -4,7 +4,7 @@ const router = express.Router();
 const User = require('../models/User');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../middleware/ApiError');
-const { requireAuth, forgetUser } = require('../middleware/auth');
+const { requireAuth, forgetUser, setTokenVersion } = require('../middleware/auth');
 const limits = require('../middleware/rateLimit');
 
 // ---- Abuse limits (30/9 security pass) ----------------------------------
@@ -54,7 +54,8 @@ async function dummyCheck(password) {
 const TOKEN_TTL = '30d'; // desktop app, not a browser session - long-lived on purpose
 
 function issueToken(user) {
-    return jwt.sign({ sub: user._id.toString() }, process.env.JWT_SECRET, { expiresIn: TOKEN_TTL });
+    // tv: the account's token version - see models/User.js tokenVersion.
+    return jwt.sign({ sub: user._id.toString(), tv: user.tokenVersion || 0 }, process.env.JWT_SECRET, { expiresIn: TOKEN_TTL });
 }
 
 // Shared shape returned after register/login and by /me, so the client
@@ -170,6 +171,34 @@ router.put(
         Object.entries({ name, degree, guideDone }).forEach(([k, v]) => { if (v !== undefined) user[k] = v; });
         await user.save();
         res.json(publicUser(user));
+    })
+);
+
+// POST /api/auth/change-password   { currentPassword, newPassword }  (30/9)
+// Changing it logs out every OTHER device: the token version goes up, so
+// older tokens stop working. This device gets a fresh token back.
+router.post(
+    '/change-password',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+        const current = typeof req.body.currentPassword === 'string' ? req.body.currentPassword : '';
+        const next = typeof req.body.newPassword === 'string' ? req.body.newPassword : '';
+        if (!current || !next) throw new ApiError(400, 'Enter your current password and a new one.');
+        if (next.length < 8) throw new ApiError(400, 'Password must be at least 8 characters.');
+        if (Buffer.byteLength(next, 'utf8') > MAX_PASSWORD_BYTES) throw new ApiError(400, 'Password is too long (72 characters at most).');
+        const tries = limits.peek('password-fail', String(req.userId), DELETE_FAILS_15M);
+        if (!tries.ok) throw new ApiError(429, `Too many wrong passwords. Try again in ${limits.waitText(tries.retryAfterSec)}.`);
+        const user = await User.findById(req.userId).select('+passwordHash');
+        if (!user) throw new ApiError(404, 'User not found.');
+        if (!(await user.checkPassword(current))) {
+            limits.hit('password-fail', String(req.userId), MIN15, DELETE_FAILS_15M);
+            throw new ApiError(403, 'That password is not right.');
+        }
+        await user.setPassword(next);
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
+        await user.save();
+        setTokenVersion(user._id, user.tokenVersion);
+        res.json({ token: issueToken(user), user: publicUser(user) });
     })
 );
 

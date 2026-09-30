@@ -1714,9 +1714,11 @@ ipcMain.handle('save-profile', async (event, profileData) => {
 // =====================================
 // Tasks
 // =====================================
-ipcMain.handle('get-tasks', async () => {
-  try { return await api.getTasks(); } 
-  catch (err) { return []; }
+// opts.strict (30/9): report a failure as { error } instead of an empty
+// list - for callers that must not mistake "couldn't load" for "none".
+ipcMain.handle('get-tasks', async (event, opts = {}) => {
+  try { return await api.getTasks(); }
+  catch (err) { return opts && opts.strict ? { error: err.message } : []; }
 });
 
 ipcMain.handle('save-task', async (event, newTask) => {
@@ -2344,9 +2346,11 @@ const syncToGoogleCalendar = (evtData) => googleSync.insertEvent(evtData);
 // =====================================
 // Events
 // =====================================
-ipcMain.handle('get-events', async () => {
-  try { return await api.getEvents(); } 
-  catch (err) { return []; }
+// opts.strict (30/9): report a failure as { error } instead of an empty
+// list - for callers that must not mistake "couldn't load" for "none".
+ipcMain.handle('get-events', async (event, opts = {}) => {
+  try { return await api.getEvents(); }
+  catch (err) { return opts && opts.strict ? { error: err.message } : []; }
 });
 
 ipcMain.handle('save-event', async (event, newEvent) => {
@@ -2554,8 +2558,8 @@ ipcMain.handle('get-files-light', async () => {
   try { return await api.getFilesLight(); } catch (err) { return []; }
 });
 
-ipcMain.handle('get-files', async () => {
-  try { return await api.getFiles(); } catch (err) { return []; }
+ipcMain.handle('get-files', async (event, opts = {}) => {
+  try { return await api.getFiles(); } catch (err) { return opts && opts.strict ? { error: err.message } : []; }
 });
 ipcMain.handle('save-file', async (event, newFile) => {
   try { return await api.createFile(newFile); } catch (err) { return { error: err.message }; }
