@@ -278,16 +278,16 @@ router.post(
 
 // A tiny page for the link in the confirmation email (no script; the site's
 // security policy allows none inline anyway).
-function resultPage(res, status, lang, title, text) {
+function resultPage(res, status, lang, title, text, { email = '', openHref = '/app/' } = {}) {
     const he = lang === 'he';
     const esc = emails.esc;
     res.status(status).type('html').send(`<!DOCTYPE html><html lang="${he ? 'he' : 'en'}" dir="${he ? 'rtl' : 'ltr'}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>MindSync</title>
 <style>body{margin:0;background:#f5f6f8;color:#1d2433;font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
 .c{max-width:440px;margin:12vh auto 0;background:#fff;border:1px solid #e4e6eb;border-radius:10px;padding:28px 26px}
-h1{font-size:20px;margin:0 0 8px}p{margin:0 0 18px;color:#4b5563}a{display:inline-block;background:#2f64d6;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600}
+h1{font-size:20px;margin:0 0 8px}p{margin:0 0 18px;color:#4b5563}p.e{margin:-4px 0 12px;font-weight:600;color:inherit;word-break:break-all}a{display:inline-block;background:#2f64d6;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600}
 @media (prefers-color-scheme:dark){body{background:#111318;color:#e8ebf2}.c{background:#1a1d24;border-color:#2a2e37}p{color:#a3aab8}a{background:#7aa2f7;color:#0f172a}}</style></head>
-<body><div class="c"><h1>${esc(title)}</h1><p>${esc(text)}</p><a href="/app/">${he ? 'פתיחת MindSync' : 'Open MindSync'}</a></div></body></html>`);
+<body><div class="c"><h1>${esc(title)}</h1>${email ? `<p class="e"><bdi dir="ltr">${esc(email)}</bdi></p>` : ''}<p>${esc(text)}</p><a href="${esc(openHref)}">${he ? 'פתיחת MindSync' : 'Open MindSync'}</a></div></body></html>`);
 }
 
 // GET /api/auth/verify-email?token=...  (the link in the email)
@@ -314,8 +314,12 @@ router.get(
             user.emailVerified = true;
             await user.save({ validateModifiedOnly: true });
         }
+        // "Open MindSync" carries which account was confirmed: the app says so
+        // when this browser is logged in to a different one (30/9 - a phone
+        // with the main account open showed that account instead).
         resultPage(res, 200, lang, he ? 'כתובת המייל אושרה' : 'Your email is confirmed',
-            he ? 'תודה! מעכשיו אפשר לאפס את הסיסמה דרך המייל אם צריך.' : 'Thanks! You can now reset your password by email if you ever need to.');
+            he ? 'תודה! מעכשיו אפשר לאפס את הסיסמה דרך המייל אם צריך.' : 'Thanks! You can now reset your password by email if you ever need to.',
+            { email: user.email, openHref: `/app/#verified=${user._id}` });
     })
 );
 
