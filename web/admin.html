@@ -46,6 +46,11 @@
   .msg { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 18px; }
   a { color: var(--accent); }
   .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .bar-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  .bar-actions .hint { margin: 0; }
+  button.danger { background: var(--bad); color: #fff; border: 0; border-radius: 6px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.danger[disabled] { opacity: .45; cursor: default; }
+  td input[type=checkbox], th input[type=checkbox] { width: 16px; height: 16px; }
 </style>
 </head>
 <body>

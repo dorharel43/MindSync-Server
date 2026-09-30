@@ -4,7 +4,7 @@ const router = express.Router();
 const User = require('../models/User');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../middleware/ApiError');
-const { requireAuth, forgetUser, setTokenVersion } = require('../middleware/auth');
+const { requireAuth, setTokenVersion } = require('../middleware/auth');
 const limits = require('../middleware/rateLimit');
 const crypto = require('crypto');
 const mailer = require('../utils/mailer');
@@ -51,6 +51,19 @@ function readCredentials(body) {
     const password = typeof body.password === 'string' ? body.password : '';
     return { email, password };
 }
+// Throwaway-mailbox services (30/9): an account on one of these is almost
+// always the tenth account of the same person, made to get more of the free
+// AI. Not a complete list - the per-network AI limit is the real backstop.
+const DISPOSABLE = new Set([
+    'mailinator.com', 'guerrillamail.com', 'guerrillamail.net', 'guerrillamail.org', 'sharklasers.com', 'grr.la',
+    '10minutemail.com', '10minutemail.net', 'temp-mail.org', 'tempmail.com', 'tempmail.net', 'tempmailo.com', 'temp-mail.io',
+    'yopmail.com', 'yopmail.net', 'trashmail.com', 'trashmail.de', 'getnada.com', 'nada.email', 'dispostable.com',
+    'maildrop.cc', 'mailnesia.com', 'mintemail.com', 'throwawaymail.com', 'fakeinbox.com', 'emailondeck.com',
+    'moakt.com', 'tmail.ws', 'mohmal.com', 'mail.tm', 'burnermail.io', 'spamgourmet.com', 'mailcatch.com',
+    'inboxkitten.com', 'mytemp.email', 'tempr.email', 'discard.email', 'emailfake.com', 'fakemail.net', 'luxusmail.org'
+]);
+const isDisposable = (email) => DISPOSABLE.has(String(email).split('@')[1] || '');
+
 // bcrypt only uses the first 72 bytes, so longer would silently not count.
 const MAX_PASSWORD_BYTES = 72;
 
@@ -127,6 +140,10 @@ router.post(
         }
         if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES) {
             throw new ApiError(400, 'Password is too long (72 characters at most).');
+        }
+
+        if (isDisposable(email)) {
+            throw new ApiError(400, 'Please sign up with your regular email address (not a temporary one).');
         }
 
         const existing = await User.findOne({ email });
@@ -313,6 +330,7 @@ router.get(
         if (!user.emailVerified) {
             user.emailVerified = true;
             await user.save({ validateModifiedOnly: true });
+            require('../rpc/aiUsage').forgetVerified(user._id);   // the full AI allowance right away
         }
         // "Open MindSync" carries which account was confirmed: the app says so
         // when this browser is logged in to a different one (30/9 - a phone
@@ -389,6 +407,7 @@ router.post(
         user.emailVerified = true;
         await user.save({ validateModifiedOnly: true });
         setTokenVersion(user._id, user.tokenVersion);
+        require('../rpc/aiUsage').forgetVerified(user._id);
         limits.reset('login-fail-any', user.email);
         res.json({ ok: true });
     })
@@ -419,23 +438,7 @@ router.delete(
             throw new ApiError(403, 'That password is not right.');
         }
 
-        const userId = user._id;
-        // Google: revoke our access (best effort - Google being down must
-        // not keep someone's account alive). The "MindSync" calendar in
-        // their Google account is theirs; it stays.
-        try { await require('../rpc/google').disconnect(userId); } catch (err) {
-            console.warn('⚠️ Delete account: Google disconnect failed:', err.message);
-        }
-        await require('../rpc/storage').removeAllForUser(userId);
-        const models = ['Task', 'Event', 'Folder', 'FileItem', 'StudyItem', 'AiUsage', 'Feedback', 'GoogleLink', 'Settings', 'ActiveDay'];
-        const counts = {};
-        for (const name of models) {
-            const r = await require(`../models/${name}`).deleteMany({ userId });
-            counts[name] = r.deletedCount || 0;
-        }
-        await User.deleteOne({ _id: userId });
-        forgetUser(userId);
-        console.log(`🗑️ Account deleted: ${userId} ${JSON.stringify(counts)}`);
+        await require('../utils/deleteAccount').deleteAccount(user._id, 'by the user');
         res.json({ deleted: true });
     })
 );
