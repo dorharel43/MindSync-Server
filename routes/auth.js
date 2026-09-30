@@ -6,6 +6,9 @@ const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../middleware/ApiError');
 const { requireAuth, forgetUser, setTokenVersion } = require('../middleware/auth');
 const limits = require('../middleware/rateLimit');
+const crypto = require('crypto');
+const mailer = require('../utils/mailer');
+const emails = require('../utils/emails');
 
 // ---- Abuse limits (30/9 security pass) ----------------------------------
 // Numbers can be changed on Render without code. A whole class signing up
@@ -70,7 +73,41 @@ function issueToken(user) {
 // Shared shape returned after register/login and by /me, so the client
 // doesn't have to know three slightly different response formats.
 function publicUser(user) {
-    return { id: user._id, email: user.email, name: user.name, degree: user.degree, guideDone: !!user.guideDone };
+    return {
+        id: user._id, email: user.email, name: user.name, degree: user.degree, guideDone: !!user.guideDone,
+        emailVerified: !!user.emailVerified, lang: user.lang || 'en',
+        // Whether this server can send email at all - the app offers
+        // "Resend the confirmation email" only then.
+        mailEnabled: mailer.mailEnabled()
+    };
+}
+
+// ---- Email: confirm the address, reset the password (30/9) ----------------
+// Both links carry a signed token with a `purpose`, so neither can ever be
+// used as a login (requireAuth refuses any token with a purpose), and a
+// verify link can't reset a password or the other way round.
+const VERIFY_TTL = '3d';
+const RESET_TTL = '1h';
+const langOf = (v) => (v === 'he' ? 'he' : v === 'en' ? 'en' : null);
+// Ties a reset link to the password it was made for: once the password
+// changes (by this link or any other way) the link stops working, so each
+// link works once.
+const passwordStamp = (hash) => crypto.createHash('sha256').update(String(hash || '')).digest('hex').slice(0, 16);
+
+function verifyLink(user) {
+    const token = jwt.sign({ sub: user._id.toString(), purpose: 'verify-email', email: user.email, lang: user.lang || 'en' },
+        process.env.JWT_SECRET, { expiresIn: VERIFY_TTL });
+    return `${mailer.publicUrl()}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
+}
+
+// Never holds up or fails the request that triggered it; a failure is
+// logged (without the address) for the owner to see on Render.
+function sendVerifyEmail(user) {
+    if (!mailer.mailEnabled()) return Promise.resolve(false);
+    const mail = emails.verifyEmail({ lang: user.lang || 'en', name: user.name, link: verifyLink(user) });
+    return mailer.sendMail({ to: user.email, toName: user.name || undefined, ...mail })
+        .then(() => true)
+        .catch(err => { console.warn('✉️ confirmation email not sent:', err.message); return false; });
 }
 
 // POST /api/auth/register   { email, password, name?, degree? }
@@ -101,10 +138,13 @@ router.post(
             throw new ApiError(409, 'An account with that email already exists.');
         }
 
-        const user = new User({ email, name, degree });
+        const user = new User({ email, name, degree, lang: langOf(req.body.lang) || 'en' });
         await user.setPassword(password);
         await user.save({ validateModifiedOnly: true });
 
+        // Welcome + confirm the address - in the background, the account
+        // is ready either way.
+        sendVerifyEmail(user);
         res.status(201).json({ token: issueToken(user), user: publicUser(user) });
     })
 );
@@ -172,12 +212,13 @@ router.put(
         const { name, degree } = req.body;
         // Only ever a real boolean - anything else is ignored.
         const guideDone = typeof req.body.guideDone === 'boolean' ? req.body.guideDone : undefined;
+        const lang = langOf(req.body.lang) || undefined;   // the app's language, for our emails
         // Load + save rather than findByIdAndUpdate: same validation, and no
         // projection of the hidden passwordHash in the update (which some
         // Mongo-compatible databases can't do).
         const user = await User.findById(req.userId);
         if (!user) throw new ApiError(404, 'User not found.');
-        Object.entries({ name, degree, guideDone }).forEach(([k, v]) => { if (v !== undefined) user[k] = v; });
+        Object.entries({ name, degree, guideDone, lang }).forEach(([k, v]) => { if (v !== undefined) user[k] = v; });
         await user.save({ validateModifiedOnly: true });
         res.json(publicUser(user));
     })
@@ -208,6 +249,144 @@ router.post(
         await user.save({ validateModifiedOnly: true });
         setTokenVersion(user._id, user.tokenVersion);
         res.json({ token: issueToken(user), user: publicUser(user) });
+    })
+);
+
+// GET /api/auth/mail-status - can this server send email? (The reset page
+// and the app ask before offering "Forgot password?" / "Resend".)
+router.get('/mail-status', (req, res) => res.json({ enabled: mailer.mailEnabled() }));
+
+const resendLimit = limits.rateLimit({
+    name: 'verify-resend', windowMs: 60 * 60 * 1000, max: 3, key: limits.byUser,
+    message: 'We already sent a few - check your inbox (and spam). You can ask again in an hour.'
+});
+
+// POST /api/auth/resend-verification - a new confirmation email.
+router.post(
+    '/resend-verification',
+    requireAuth, resendLimit,
+    asyncHandler(async (req, res) => {
+        if (!mailer.mailEnabled()) throw new ApiError(503, 'Email isn\'t set up on this server yet.');
+        const user = await User.findById(req.userId);
+        if (!user) throw new ApiError(404, 'User not found.');
+        if (user.emailVerified) return res.json({ alreadyVerified: true });
+        const sent = await sendVerifyEmail(user);
+        if (!sent) throw new ApiError(502, 'The email couldn\'t be sent right now. Please try again later.');
+        res.json({ sent: true });
+    })
+);
+
+// A tiny page for the link in the confirmation email (no script; the site's
+// security policy allows none inline anyway).
+function resultPage(res, status, lang, title, text) {
+    const he = lang === 'he';
+    const esc = emails.esc;
+    res.status(status).type('html').send(`<!DOCTYPE html><html lang="${he ? 'he' : 'en'}" dir="${he ? 'rtl' : 'ltr'}"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>MindSync</title>
+<style>body{margin:0;background:#f5f6f8;color:#1d2433;font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+.c{max-width:440px;margin:12vh auto 0;background:#fff;border:1px solid #e4e6eb;border-radius:10px;padding:28px 26px}
+h1{font-size:20px;margin:0 0 8px}p{margin:0 0 18px;color:#4b5563}a{display:inline-block;background:#2f64d6;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600}
+@media (prefers-color-scheme:dark){body{background:#111318;color:#e8ebf2}.c{background:#1a1d24;border-color:#2a2e37}p{color:#a3aab8}a{background:#7aa2f7;color:#0f172a}}</style></head>
+<body><div class="c"><h1>${esc(title)}</h1><p>${esc(text)}</p><a href="/app/">${he ? 'פתיחת MindSync' : 'Open MindSync'}</a></div></body></html>`);
+}
+
+// GET /api/auth/verify-email?token=...  (the link in the email)
+// Opening it twice is fine; a link for an address the account no longer
+// has (or a deleted account) does nothing.
+router.get(
+    '/verify-email',
+    asyncHandler(async (req, res) => {
+        let p = null;
+        try { p = jwt.verify(String(req.query.token || ''), process.env.JWT_SECRET); } catch (e) { p = null; }
+        const lang = langOf(p && p.lang) || (/^he\b/i.test(req.headers['accept-language'] || '') ? 'he' : 'en');
+        const he = lang === 'he';
+        if (!p || p.purpose !== 'verify-email' || typeof p.sub !== 'string') {
+            return resultPage(res, 400, lang, he ? 'הקישור לא תקף' : 'This link doesn\'t work',
+                he ? 'יכול להיות שעברו יותר מ-3 ימים. אפשר לבקש מייל חדש מהגדרות ← פרופיל באפליקציה.'
+                   : 'It may be more than 3 days old. You can ask for a new one in Settings > Profile in the app.');
+        }
+        const user = await User.findById(p.sub);
+        if (!user || user.email !== p.email) {
+            return resultPage(res, 400, lang, he ? 'הקישור לא תקף' : 'This link doesn\'t work',
+                he ? 'החשבון הזה כבר לא קיים.' : 'This account no longer exists.');
+        }
+        if (!user.emailVerified) {
+            user.emailVerified = true;
+            await user.save({ validateModifiedOnly: true });
+        }
+        resultPage(res, 200, lang, he ? 'כתובת המייל אושרה' : 'Your email is confirmed',
+            he ? 'תודה! מעכשיו אפשר לאפס את הסיסמה דרך המייל אם צריך.' : 'Thanks! You can now reset your password by email if you ever need to.');
+    })
+);
+
+// POST /api/auth/forgot-password   { email, lang? }
+// Always the same answer, whether or not the email has an account - so
+// this can't be used to find out who uses MindSync. The email is sent in
+// the background (a registered address doesn't answer slower either).
+const forgotIpLimit = limits.rateLimit({
+    name: 'forgot-ip', windowMs: MIN15, max: n(process.env.FORGOT_PER_IP_15MIN, 20), key: limits.byIp,
+    message: 'Too many requests. Try again in a few minutes.'
+});
+router.post(
+    '/forgot-password',
+    forgotIpLimit,
+    asyncHandler(async (req, res) => {
+        if (!mailer.mailEnabled()) throw new ApiError(503, 'Password reset by email isn\'t available yet.');
+        const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+        if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            throw new ApiError(400, 'Enter the email you signed up with.');
+        }
+        // At most 3 emails an hour to one address - nobody can flood a
+        // mailbox through us. Silently: the answer stays the same.
+        const perEmail = limits.hit('forgot-email', email, 60 * 60 * 1000, 3);
+        if (perEmail.ok) {
+            const lang = langOf(req.body.lang);
+            User.findOne({ email }).select('+passwordHash').then(user => {
+                if (!user) return;
+                const token = jwt.sign({ sub: user._id.toString(), purpose: 'reset', tv: user.tokenVersion || 0, ps: passwordStamp(user.passwordHash) },
+                    process.env.JWT_SECRET, { expiresIn: RESET_TTL });
+                // In the part after '#': never sent to a server, so it can't
+                // end up in a log or a Referer header.
+                const link = `${mailer.publicUrl()}/reset-password#token=${encodeURIComponent(token)}`;
+                const mail = emails.resetEmail({ lang: lang || user.lang || 'en', link });
+                return mailer.sendMail({ to: user.email, ...mail });
+            }).catch(err => console.warn('✉️ reset email not sent:', err.message));
+        }
+        res.json({ ok: true });
+    })
+);
+
+// POST /api/auth/reset-password   { token, password }
+const resetIpLimit = limits.rateLimit({
+    name: 'reset-ip', windowMs: MIN15, max: 30, key: limits.byIp,
+    message: 'Too many tries. Try again in a few minutes.'
+});
+router.post(
+    '/reset-password',
+    resetIpLimit,
+    asyncHandler(async (req, res) => {
+        const token = typeof req.body.token === 'string' ? req.body.token : '';
+        const password = typeof req.body.password === 'string' ? req.body.password : '';
+        if (password.length < 8) throw new ApiError(400, 'Password must be at least 8 characters.');
+        if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES) throw new ApiError(400, 'Password is too long (72 characters at most).');
+        const EXPIRED = 'This link has expired or was already used. Ask for a new one.';
+        let p = null;
+        try { p = jwt.verify(token, process.env.JWT_SECRET); } catch (e) { p = null; }
+        if (!p || p.purpose !== 'reset' || typeof p.sub !== 'string') throw new ApiError(400, EXPIRED);
+        const user = await User.findById(p.sub).select('+passwordHash');
+        if (!user || (user.tokenVersion || 0) !== (p.tv || 0) || passwordStamp(user.passwordHash) !== p.ps) {
+            throw new ApiError(400, EXPIRED);
+        }
+        await user.setPassword(password);
+        // Every device that was logged in is logged out (a reset is often
+        // "someone else may have my password").
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
+        // The link came to this mailbox - that confirms the address too.
+        user.emailVerified = true;
+        await user.save({ validateModifiedOnly: true });
+        setTokenVersion(user._id, user.tokenVersion);
+        limits.reset('login-fail-any', user.email);
+        res.json({ ok: true });
     })
 );
 

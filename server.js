@@ -178,11 +178,19 @@ app.get('/', (req, res, next) => {
   if (fs.existsSync(home)) return res.sendFile(home);
   res.redirect('/app/');
 });
-const PRIVACY_UPDATED = '29 September 2026';
+const PRIVACY_UPDATED = '30 September 2026';
 // The owner's beta numbers (30/9). The page itself is public but empty - the
 // data behind it (/api/admin/beta) is only for the emails in ADMIN_EMAILS.
 app.get('/admin', (req, res, next) => {
   const page = path.join(WEB_DIR, 'admin.html');
+  if (fs.existsSync(page)) return res.sendFile(page);
+  next();
+});
+
+// Forgot password (30/9): ask for the email, or - from the emailed link -
+// choose a new password. See routes/auth.js forgot-password/reset-password.
+app.get('/reset-password', (req, res, next) => {
+  const page = path.join(WEB_DIR, 'reset-password.html');
   if (fs.existsSync(page)) return res.sendFile(page);
   next();
 });

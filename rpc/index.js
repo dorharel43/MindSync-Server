@@ -25,7 +25,7 @@ const rpcLimit = limits.rateLimit({
 
 // Channels the browser handles itself (login, file picker, new tab...) are
 // not callable here even though the desktop code defined some of them.
-const BROWSER_ONLY = new Set(['auth-get-session', 'auth-login', 'auth-register', 'auth-change-password', 'auth-logout',
+const BROWSER_ONLY = new Set(['auth-get-session', 'auth-login', 'auth-register', 'auth-change-password', 'auth-logout', 'open-reset-password',
     'select-upload-files', 'read-upload-file', 'open-summary-window', 'get-diagnostic-log',
     'pick-application', 'get-suggested-apps', 'toggle-blocking']);
 

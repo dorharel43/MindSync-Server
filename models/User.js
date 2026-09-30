@@ -48,7 +48,14 @@ const userSchema = new mongoose.Schema({
     // the version it was made with; an older one stops working - so changing
     // the password logs out every other device (and anyone holding a stolen
     // token).
-    tokenVersion: { type: Number, default: 0 }
+    tokenVersion: { type: Number, default: 0 },
+    // The address was confirmed by a link sent to it (30/9). Accounts from
+    // before email existed have it false/missing - they can still log in
+    // and still reset their password (the reset link itself proves the
+    // mailbox is theirs, and confirms it).
+    emailVerified: { type: Boolean, default: false },
+    // The language the person uses the app in, for the emails we send.
+    lang: { type: String, enum: ['he', 'en'], default: 'en' }
 }, {
     timestamps: true
 });
