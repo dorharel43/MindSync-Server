@@ -66,6 +66,9 @@ app.use(
 // run - the login token lives in localStorage on this origin. Frames are
 // refused (clickjacking), MIME sniffing is off.
 app.disable('x-powered-by');
+// gzip (30/9): the app is ~600 KB of text per visit; compressed it's about a
+// quarter - it shows on a phone. Server-sent streams and uploads unaffected.
+app.use(require('compression')());
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
@@ -173,13 +176,37 @@ const fs = require('fs');
 //   /         the home page - what MindSync is, link to the app and the policy
 //   /privacy  the privacy policy; CONTACT_EMAIL fills in how to reach you
 const WEB_DIR = path.join(__dirname, 'web');
+// Icons, the install manifest and the link-preview image live at the site
+// root (/favicon.ico, /manifest.webmanifest, /og-image.png...) - 30/9.
+app.use(express.static(path.join(WEB_DIR, 'assets'), { index: false, maxAge: '1d' }));
+
+// Public pages with a few values filled in (30/9): {{BASE}} - the site's
+// full address (a link preview needs one), {{UPDATED}}, {{CONTACT_HE}} /
+// {{CONTACT_EN}} (CONTACT_EMAIL on Render).
+const PAGES_UPDATED = '30 September 2026';
+function sendPage(res, next, file) {
+  fs.readFile(path.join(WEB_DIR, file), 'utf8', (err, html) => {
+    if (err) return next();
+    const email = (process.env.CONTACT_EMAIL || '').trim().replace(/[<>&"]/g, '');
+    const link = email ? `<a href="mailto:${encodeURI(email)}" dir="ltr">${email}</a>` : '';
+    const base = require('./utils/mailer').publicUrl();
+    res.type('html').send(html
+      .replace(/\{\{BASE\}\}/g, base)
+      .replace(/\{\{UPDATED\}\}/g, PAGES_UPDATED)
+      .replace(/\{\{CONTACT_EN\}\}/g, link ? `Questions or requests about your data: ${link}.` : 'Questions or requests about your data: use Settings → Help & feedback in the app.')
+      .replace(/\{\{CONTACT_HE\}\}/g, link ? `שאלות או בקשות בנוגע למידע שלך: ${link}.` : 'שאלות או בקשות בנוגע למידע שלך: דרך הגדרות ← עזרה ומשוב באפליקציה.'));
+  });
+}
 app.get('/', (req, res, next) => {
   if (!(req.headers.accept || '').includes('text/html')) return next(); // API clients: health JSON below
-  const home = path.join(WEB_DIR, 'home.html');
-  if (fs.existsSync(home)) return res.sendFile(home);
-  res.redirect('/app/');
+  sendPage(res, next, 'home.html');
 });
-const PRIVACY_UPDATED = '30 September 2026';
+app.get('/terms', (req, res, next) => sendPage(res, next, 'terms.html'));
+// The app page itself carries link-preview tags too (a shared /app/ link).
+app.get(['/app', '/app/', '/app/index.html'], (req, res, next) => {
+  if (req.path === '/app') return res.redirect(301, '/app/');
+  sendPage(res, next, 'index.html');
+});
 // The owner's beta numbers (30/9). The page itself is public but empty - the
 // data behind it (/api/admin/beta) is only for the emails in ADMIN_EMAILS.
 app.get('/admin', (req, res, next) => {
@@ -196,16 +223,7 @@ app.get('/reset-password', (req, res, next) => {
   next();
 });
 
-app.get('/privacy', (req, res, next) => {
-  fs.readFile(path.join(WEB_DIR, 'privacy.html'), 'utf8', (err, html) => {
-    if (err) return next();
-    const email = (process.env.CONTACT_EMAIL || '').trim();
-    const contact = email
-      ? `Questions or requests about your data: <a href="mailto:${encodeURI(email)}">${email.replace(/[<>&"]/g, '')}</a>.`
-      : 'Questions or requests about your data: use Settings → Send feedback in the app.';
-    res.type('html').send(html.replace('{{CONTACT}}', contact).replace('{{UPDATED}}', PRIVACY_UPDATED));
-  });
-});
+app.get('/privacy', (req, res, next) => sendPage(res, next, 'privacy.html'));
 app.use('/app', express.static(path.join(__dirname, 'web'), { extensions: ['html'] }));
 // KaTeX (formulas in summaries) straight from node_modules.
 app.use('/app/vendor/katex', express.static(path.join(path.dirname(require.resolve('katex/package.json')), 'dist')));

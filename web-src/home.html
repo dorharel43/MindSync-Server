@@ -3,23 +3,52 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MindSync - study planner and AI study assistant</title>
-    <meta name="description" content="MindSync turns your course files into summaries and practice questions, reads exam dates from your syllabus, and plans your study week around them.">
+    <title>MindSync - study assistant for university students</title>
+    <meta name="title-he" content="MindSync - עוזר למידה לסטודנטים">
+    <meta name="title-en" content="MindSync - study assistant for university students">
+    <meta name="description" content="MindSync turns your course files into practice questions and shows what you really know before the exam. MindSync הופכת את קבצי הקורס לשאלות תרגול ומראה מה באמת ידוע לך לפני המבחן.">
+    <!-- Icons, install, and the preview a link gets in WhatsApp / Telegram /
+         Facebook (30/9). {{BASE}} is filled in by server.js - a preview
+         image needs a full address. -->
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#2f64d6">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="MindSync">
+    <meta property="og:title" content="MindSync - עוזר למידה לסטודנטים">
+    <meta property="og:description" content="שאלות תרגול מהקבצים של הקורס, מוכנות לכל מבחן ולוח שבועי - ולדעת מה באמת ידוע לך. חינם, בגרסת בטא.">
+    <meta property="og:image" content="{{BASE}}/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:url" content="{{BASE}}/">
+    <meta property="og:locale" content="he_IL">
+    <meta property="og:locale:alternate" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <script src="/app/pages.js"></script>
     <style>
-        :root { --bg: #f7f8fb; --card: #fff; --text: #1d2433; --muted: #5b6475; --accent: #2f5fd6; --line: #e6e8ef; }
-        @media (prefers-color-scheme: dark) { :root { --bg: #11151c; --card: #181d26; --text: #e8ebf2; --muted: #a2aabb; --accent: #6d95ff; --line: #262c38; } }
+        :root { --bg: #f7f8fb; --card: #fff; --text: #1d2433; --muted: #5b6475; --accent: #2f64d6; --line: #e6e8ef; }
+        @media (prefers-color-scheme: dark) { :root { --bg: #11151c; --card: #181d26; --text: #e8ebf2; --muted: #a2aabb; --accent: #7aa2f7; --line: #262c38; } }
         * { box-sizing: border-box; }
         body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+        html:not(.lang-he) [data-lang="he"], html.lang-he [data-lang="en"] { display: none !important; }
         .wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
-        header { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
+        header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 0; }
         .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
         .logo { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 800; }
+        .top-actions { display: flex; align-items: center; gap: 10px; }
+        .langs { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+        .langs button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; padding: 5px 10px; cursor: pointer; }
+        .langs button[aria-pressed="true"] { background: var(--card); color: var(--text); font-weight: 600; }
         .btn { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 10px 18px; border-radius: 10px; font-weight: 600; }
         .btn--ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
-        .hero { padding: 48px 0 32px; }
+        .hero { padding: 40px 0 28px; }
+        .badge { display: inline-block; font-size: 13px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); padding: 3px 10px; border-radius: 999px; margin-bottom: 14px; }
         h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.15; margin: 0 0 16px; letter-spacing: -0.02em; }
-        .lead { font-size: 18px; color: var(--muted); max-width: 640px; margin: 0 0 28px; }
-        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; padding: 16px 0 48px; }
+        html.lang-he h1 { letter-spacing: 0; }
+        .lead { font-size: 18px; color: var(--muted); max-width: 660px; margin: 0 0 28px; }
+        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; padding: 16px 0 40px; }
         @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
         .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
         .card h2 { font-size: 17px; margin: 0 0 6px; }
@@ -29,56 +58,111 @@
         .google p { margin: 0 0 8px; color: var(--muted); font-size: 15px; }
         footer { border-top: 1px solid var(--line); padding: 20px 0 32px; color: var(--muted); font-size: 14px; display: flex; gap: 20px; flex-wrap: wrap; }
         footer a { color: var(--muted); }
+        a { color: var(--accent); }
     </style>
 </head>
 <body>
     <div class="wrap">
         <header>
-            <div class="brand"><span class="logo">M</span> MindSync</div>
-            <a class="btn btn--ghost" href="/app/">Log in</a>
+            <div class="brand"><span class="logo">M</span> <span dir="ltr">MindSync</span></div>
+            <div class="top-actions">
+                <div class="langs" role="group" aria-label="Language / שפה">
+                    <button type="button" data-set-lang="he" lang="he">עברית</button>
+                    <button type="button" data-set-lang="en" lang="en">English</button>
+                </div>
+                <a class="btn btn--ghost" href="/app/"><span data-lang="he">כניסה</span><span data-lang="en">Log in</span></a>
+            </div>
         </header>
 
-        <section class="hero">
-            <h1>Study smarter, with a plan that knows when your exams are.</h1>
-            <p class="lead">
-                MindSync is a study assistant for university students. Upload your course files and it writes summaries
-                and practice questions, reads exam dates from your syllabus, and plans your week so you're ready in time.
-            </p>
-            <a class="btn" href="/app/">Open MindSync - it's free</a>
-        </section>
+        <!-- ================= Hebrew ================= -->
+        <main data-lang="he">
+            <section class="hero">
+                <span class="badge">גרסת בטא · חינם</span>
+                <h1>לדעת מה באמת ידוע לך - לפני המבחן.</h1>
+                <p class="lead">
+                    MindSync היא אפליקציית למידה לסטודנטים. מעלים את קבצי הקורס, וה-AI כותב מהם שאלות תרגול וסיכומים.
+                    לפני כל תשובה מסמנים כמה בטוחים - וכך רואים מה באמת ידוע ומה רק נדמה שידוע.
+                    האפליקציה גם קוראת את תאריכי המבחנים מהסילבוס ובונה לוח שבועי.
+                </p>
+                <a class="btn" href="/app/">לפתיחת MindSync</a>
+            </section>
 
-        <section class="grid">
-            <div class="card">
-                <h2>Summaries and practice questions</h2>
-                <p>Upload lecture slides or notes (PDF or text). The AI writes a summary and questions you can practise with.</p>
-            </div>
-            <div class="card">
-                <h2>Spaced repetition before the exam</h2>
-                <p>Questions come back at the right time, and everything you need is reviewed before the exam date.</p>
-            </div>
-            <div class="card">
-                <h2>Syllabus to calendar</h2>
-                <p>Upload a syllabus and MindSync finds the exams, classes and deadlines and adds them for you.</p>
-            </div>
-            <div class="card">
-                <h2>Weekly planner and tasks</h2>
-                <p>Write plans the way you'd say them ("exam in statistics on Thursday at 9") - no forms to fill in.</p>
-            </div>
-        </section>
+            <section class="grid">
+                <div class="card">
+                    <h2>שאלות תרגול מהחומר שלך</h2>
+                    <p>מעלים מצגות, סיכומים או דפי תרגילים (PDF או טקסט). ה-AI כותב שאלות, בודק את התשובות ומסביר מה חסר.</p>
+                </div>
+                <div class="card">
+                    <h2>יודעים - או רק חושבים שיודעים?</h2>
+                    <p>לפני כל תשובה מסמנים "בוודאות", "כנראה" או "ניחוש". שאלות שסימנת בהן "בוודאות" וטעית חוזרות ראשונות.</p>
+                </div>
+                <div class="card">
+                    <h2>מוכנות לכל מבחן</h2>
+                    <p>לכל קורס רואים כמה ממנו תרגלת, כמה ידוע לך ואיזה קצב צריך עד המבחן. השאלות חוזרות בזמן הנכון - לפני תאריך המבחן.</p>
+                </div>
+                <div class="card">
+                    <h2>מהסילבוס ללוח השבועי</h2>
+                    <p>מעלים סילבוס והאפליקציה מוצאת את המבחנים, השיעורים וההגשות ומוסיפה אותם. כותבים כמו שאומרים: "מבחן בסטטיסטיקה ביום חמישי ב-9".</p>
+                </div>
+            </section>
 
-        <section class="google">
-            <h2>Google Calendar (optional)</h2>
-            <p>
-                If you choose to connect Google Calendar, MindSync creates one calendar in your account called "MindSync"
-                and adds your classes, exams and study blocks to it. It can only see and change that calendar - not your other calendars or events.
-            </p>
-            <p>You can disconnect at any time from Settings. Details are in the <a href="/privacy">privacy policy</a>.</p>
-        </section>
+            <section class="google">
+                <h2>Google Calendar (לא חובה)</h2>
+                <p>
+                    אם בוחרים לחבר את Google Calendar, נוצר בחשבון Google שלך יומן אחד בשם "MindSync" ואליו נכנסים השיעורים, המבחנים וזמני הלימוד.
+                    MindSync רואה ומשנה רק את היומן הזה - לא את שאר היומנים והאירועים שלך.
+                </p>
+                <p>אפשר לנתק בכל רגע מההגדרות. הפרטים ב<a href="/privacy">מדיניות הפרטיות</a>.</p>
+            </section>
+        </main>
+
+        <!-- ================= English ================= -->
+        <main data-lang="en">
+            <section class="hero">
+                <span class="badge">Beta · free</span>
+                <h1>Know what you really know - before the exam.</h1>
+                <p class="lead">
+                    MindSync is a study assistant for university students. Upload your course files and the AI writes practice
+                    questions and summaries from them. Before each answer you say how sure you are - so you see what you really know,
+                    and what you only think you know. It also reads exam dates from your syllabus and plans your week.
+                </p>
+                <a class="btn" href="/app/">Open MindSync</a>
+            </section>
+
+            <section class="grid">
+                <div class="card">
+                    <h2>Practice questions from your material</h2>
+                    <p>Upload lecture slides, notes or exercise sheets (PDF or text). The AI writes questions, checks your answers and says what's missing.</p>
+                </div>
+                <div class="card">
+                    <h2>Know it - or only think you do?</h2>
+                    <p>Before each answer you pick "I'm sure", "I think so" or "Guessing". Questions you were sure about and got wrong come back first.</p>
+                </div>
+                <div class="card">
+                    <h2>Readiness for every exam</h2>
+                    <p>For each course: how much you've practiced, how much of it you know, and the pace you need until the exam. Questions come back at the right time - before the exam date.</p>
+                </div>
+                <div class="card">
+                    <h2>From syllabus to weekly plan</h2>
+                    <p>Upload a syllabus and MindSync finds the exams, classes and deadlines and adds them. Write plans the way you'd say them - no forms to fill in.</p>
+                </div>
+            </section>
+
+            <section class="google">
+                <h2>Google Calendar (optional)</h2>
+                <p>
+                    If you choose to connect Google Calendar, MindSync creates one calendar in your account called "MindSync"
+                    and adds your classes, exams and study blocks to it. It can only see and change that calendar - not your other calendars or events.
+                </p>
+                <p>You can disconnect at any time from Settings. Details are in the <a href="/privacy">privacy policy</a>.</p>
+            </section>
+        </main>
 
         <footer>
             <span>© MindSync</span>
-            <a href="/privacy">Privacy policy</a>
-            <a href="/app/">Open the app</a>
+            <a href="/privacy"><span data-lang="he">מדיניות פרטיות</span><span data-lang="en">Privacy policy</span></a>
+            <a href="/terms"><span data-lang="he">תנאי שימוש</span><span data-lang="en">Terms of use</span></a>
+            <a href="/app/"><span data-lang="he">לפתיחת האפליקציה</span><span data-lang="en">Open the app</span></a>
         </footer>
     </div>
 </body>
