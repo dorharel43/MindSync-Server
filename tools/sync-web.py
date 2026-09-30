@@ -73,7 +73,7 @@ WEB_HEAD = ICON_HEAD + '''
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="MindSync">
     <meta property="og:title" content="MindSync - עוזר למידה לסטודנטים">
-    <meta property="og:description" content="שאלות תרגול מהקבצים של הקורס, מוכנות לכל מבחן ולוח שבועי - ולדעת מה באמת ידוע לך. חינם, בגרסת בטא.">
+    <meta property="og:description" content="שאלות תרגול מהקבצים של הקורס, מוכנות לכל מבחן ולוח שבועי - ולדעת מה באמת ידוע לך.">
     <meta property="og:image" content="{{BASE}}/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
