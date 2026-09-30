@@ -16,8 +16,24 @@
 const BASE = () => (process.env.BREVO_BASE_URL || 'https://api.brevo.com/v3').replace(/\/$/, '');
 const TIMEOUT_MS = 10000;
 
+// MAIL_FROM as typed into Render (30/9): spaces or a line break around it,
+// quotes, or the "MindSync <x@gmail.com>" form all made Brevo answer "valid
+// sender email required". Take just the address.
+function senderAddress() {
+  let v = String(process.env.MAIL_FROM || '').trim().replace(/^["']+|["']+$/g, '').trim();
+  const angle = /<([^<>]+)>/.exec(v);
+  if (angle) v = angle[1].trim();
+  v = v.replace(/^mailto:/i, '').trim();
+  return /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(v) ? v : '';
+}
+
 function mailEnabled() {
-  return !!(process.env.BREVO_API_KEY && process.env.MAIL_FROM);
+  return !!(String(process.env.BREVO_API_KEY || '').trim() && senderAddress());
+}
+
+// Said once at start-up, so a mistyped setting shows in the Render log.
+if (process.env.MAIL_FROM && !senderAddress()) {
+  console.warn('✉️ MAIL_FROM on Render is not an email address - set it to just the address (e.g. mindsync.app@gmail.com). Email is off until then.');
 }
 
 // The address links in emails point to. NEVER taken from the request's Host
@@ -41,9 +57,9 @@ async function sendMail({ to, toName, subject, html, text }) {
     const res = await fetch(`${BASE()}/smtp/email`, {
       method: 'POST',
       signal: ctrl.signal,
-      headers: { 'api-key': process.env.BREVO_API_KEY, 'content-type': 'application/json', accept: 'application/json' },
+      headers: { 'api-key': String(process.env.BREVO_API_KEY).trim(), 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify({
-        sender: { name: process.env.MAIL_FROM_NAME || 'MindSync', email: process.env.MAIL_FROM },
+        sender: { name: String(process.env.MAIL_FROM_NAME || 'MindSync').trim() || 'MindSync', email: senderAddress() },
         to: [{ email: to, ...(toName ? { name: toName } : {}) }],
         subject,
         htmlContent: html,
