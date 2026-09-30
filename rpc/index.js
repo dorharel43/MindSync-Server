@@ -36,7 +36,8 @@ router.post('/:channel', requireAuth, rpcLimit, async (req, res, next) => {
 
     const args = Array.isArray(req.body && req.body.args) ? req.body.args : [];
     const token = (req.headers.authorization || '').slice('Bearer '.length);
-    const ctx = { token, userId: req.userId, events: new Set() };
+    // ip: the AI allowance also counts per network address (30/9) - see rpc/aiUsage.js.
+    const ctx = { token, userId: req.userId, ip: require('../middleware/rateLimit').byIp(req), events: new Set() };
     const started = Date.now();
     try {
         const result = await context.run(ctx, () => fn(makeEvent(), ...args));
