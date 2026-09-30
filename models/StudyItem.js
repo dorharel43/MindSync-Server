@@ -31,6 +31,9 @@ const reviewSchema = new mongoose.Schema({
         default: null
     },
     reviewedAt: { type: Date, default: Date.now },
+    // One id per answer, made by the app (30/9): the same answer sent twice
+    // (retry after a timeout) is saved once.
+    clientId: { type: String, maxlength: 40 },
     secondsSpent: { type: Number, default: 0 }
 }, { _id: false });
 

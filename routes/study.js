@@ -286,7 +286,8 @@ router.get(
     const category = req.query.category || null;
     let items = await StudyItem.find({ userId: req.userId, suspended: false });
     // ?sourceFile=... : only the questions made from that one file.
-    if (req.query.sourceFile) items = items.filter(i => (i.sourceFile || '') === req.query.sourceFile);
+    // (?sourceFile= with nothing after it: the questions written by hand)
+    if (typeof req.query.sourceFile === 'string') items = items.filter(i => (i.sourceFile || '') === req.query.sourceFile);
 
     // ?all=1 - "Practice anyway": everything in the chosen course/file, not
     // only what is due. For the night before an exam, when the schedule says
@@ -453,7 +454,7 @@ router.get(
           category: name,
           items: v.items,
           readiness: { ...readinessOf(itemsByCourse.get(name) || [], c.exam, now.getTime()), filesWithoutQuestions: filesWithout[name] || 0 },
-          due: c.dueReviews + c.newToday,
+          due: Number.isInteger(c.queued) ? c.queued : c.dueReviews + c.newToday,
           dueReviews: c.dueReviews,
           newToday: c.newToday,
           neverReviewed: v.neverReviewed,
@@ -534,16 +535,20 @@ router.post(
     if (items.length > 200) throw new ApiError(400, 'Too many items in one request (max 200)');
     await assertRoom(StudyItem, req.userId, items.length);
 
+    // Fitted to the model's limits first (30/9): insertMany with ordered:false
+    // SKIPS an item that fails validation, silently - a full worked solution
+    // over 4000 characters just vanished while the app said "added".
+    const fit = (v, max) => { const t = String(v || '').trim(); return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t; };
     const created = await StudyItem.insertMany(
-      items.map(i => ({
+      items.filter(i => i && String(i.question || '').trim()).map(i => ({
         userId: req.userId,
-        question: i.question,
-        answer: i.answer || '',
+        question: fit(i.question, 2000),
+        answer: fit(i.answer, 4000),
         mode: ['recall', 'practice', 'explain'].includes(i.mode) ? i.mode : 'recall',
         solutionSource: ['document', 'ai', 'user', 'imported', 'none'].includes(i.solutionSource) ? i.solutionSource : 'document',
-        skillTag: i.skillTag || '',
-        category: i.category || '',
-        sourceFile: i.sourceFile || ''
+        skillTag: fit(i.skillTag, 120),
+        category: fit(i.category, 100),
+        sourceFile: fit(i.sourceFile, 300)
       })),
       { ordered: false } // one bad item shouldn't reject the whole batch
     );
@@ -605,8 +610,22 @@ router.post(
       throw new ApiError(400, `outcome must be one of: ${Object.keys(OUTCOME_CORRECT).join(', ')}`);
     }
 
+    // "I don't know" can't be "got it" (30/9) - it would advance the schedule.
+    if (confidence === 'dont_know' && OUTCOME_CORRECT[outcome]) {
+      throw new ApiError(400, "An \"I don't know\" answer can't be marked as known");
+    }
+
     const item = await StudyItem.findOne({ _id: req.params.id, userId: req.userId });
     if (!item) throw new ApiError(404, 'Study item not found');
+
+    // The same answer sent twice (a retry after a slow server that DID save
+    // the first one, 30/9): saved once, so the schedule doesn't jump twice.
+    const lastReview = item.reviews && item.reviews[item.reviews.length - 1];
+    if (lastReview && lastReview.confidence === confidence && lastReview.outcome === outcome
+        && Date.now() - new Date(lastReview.reviewedAt).getTime() < 90 * 1000
+        && req.body.clientId && lastReview.clientId === req.body.clientId) {
+      return res.json({ item, grade: null, nextInterval: item.interval, cappedForExam: null, wasOverconfident: confidence === 'sure' && !OUTCOME_CORRECT[outcome], duplicate: true });
+    }
 
     // The course's next exam caps how far away the next review can be.
     const course = courseOf(item);
@@ -618,6 +637,7 @@ router.post(
       outcome,
       wasCorrect: OUTCOME_CORRECT[outcome],
       aiSuggested,
+      clientId: typeof req.body.clientId === 'string' ? req.body.clientId.slice(0, 40) : undefined,
       secondsSpent: Math.min(Math.max(Number(secondsSpent) || 0, 0), 24 * 3600),
       reviewedAt: new Date()
     });
