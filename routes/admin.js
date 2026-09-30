@@ -144,6 +144,8 @@ router.get(
       const days = [...p.days].sort();
       const signup = dayOf(user.createdAt);
       return {
+        id: String(user._id),
+        isYou: String(user._id) === String(req.userId),
         name: user.name || '',
         email: maskEmail(user.email),
         signedUp: signup,
@@ -182,6 +184,36 @@ router.get(
       users: rows,
       feedback: feedback.map(f => ({ at: f.createdAt, from: nameOf.get(String(f.userId)) || '', page: f.page || '', text: f.text || '' }))
     });
+  })
+);
+
+// POST /api/admin/delete-users   { ids: [...], confirm: 'DELETE' }  (30/9)
+// The owner clears out test accounts made during the beta - each with all of
+// its data, exactly like "Delete account" in Settings. Never the owner's own
+// account (or another owner's). One at a time, so a failure half way leaves
+// every account either fully there or fully gone.
+router.post(
+  '/delete-users',
+  requireOwner,
+  asyncHandler(async (req, res) => {
+    if (req.body.confirm !== 'DELETE') return res.status(400).json({ error: { message: 'Type DELETE to confirm.', status: 400 } });
+    const raw = Array.isArray(req.body.ids) ? req.body.ids : [];
+    const ids = [...new Set(raw.filter(x => typeof x === 'string' && /^[a-f0-9]{24}$/i.test(x)))].slice(0, 500);
+    if (!ids.length) return res.status(400).json({ error: { message: 'No accounts chosen.', status: 400 } });
+    const owners = new Set([String(req.userId).toLowerCase(), ...list(process.env.ADMIN_USER_IDS)]);
+    const emails = list(process.env.ADMIN_EMAILS);
+    const { deleteAccount } = require('../utils/deleteAccount');
+    const found = await User.find({ _id: { $in: ids } }).select('email').lean();
+    let deleted = 0; const skipped = []; const failed = [];
+    for (const u of found) {
+      const id = String(u._id);
+      if (owners.has(id.toLowerCase()) || emails.includes(String(u.email).toLowerCase())) { skipped.push(id); continue; }
+      try { await deleteAccount(u._id, 'beta clean-up by the owner'); deleted += 1; } catch (err) {
+        console.warn('admin delete failed:', id, err.message);
+        failed.push(id);
+      }
+    }
+    res.json({ deleted, skipped: skipped.length, failed: failed.length, notFound: ids.length - found.length });
   })
 );
 

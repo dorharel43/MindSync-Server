@@ -11,14 +11,17 @@
   try { token = localStorage.getItem('mindsync.token'); } catch (e) { /* storage blocked */ }
   if (!token) { message('Log in to MindSync on this site first: <a href="/app/">open the app</a>, then come back here.'); return; }
 
-  fetch('/api/admin/beta', { headers: { authorization: `Bearer ${token}` } })
-    .then(async (res) => {
-      if (res.status === 401) return message('Your login has expired. <a href="/app/">Log in again</a>, then come back here.');
-      if (res.status === 404) return message('This page is only for the app owner.');
-      if (!res.ok) return message('Could not load the numbers right now. Try again in a minute.');
-      render(await res.json());
-    })
-    .catch(() => message('Could not reach the server. Try again in a minute.'));
+  function load() {
+    fetch('/api/admin/beta', { headers: { authorization: `Bearer ${token}` } })
+      .then(async (res) => {
+        if (res.status === 401) return message('Your login has expired. <a href="/app/">Log in again</a>, then come back here.');
+        if (res.status === 404) return message('This page is only for the app owner.');
+        if (!res.ok) return message('Could not load the numbers right now. Try again in a minute.');
+        render(await res.json());
+      })
+      .catch(() => message('Could not reach the server. Try again in a minute.'));
+  }
+  load();
 
   function render(d) {
     const s = d.summary;
@@ -41,6 +44,7 @@
       </div>`).join('');
     const rows = d.users.map(u => `
       <tr>
+        <td>${u.isYou ? '<span class="no" title="Your own account can\'t be deleted here">you</span>' : `<input type="checkbox" class="pick" value="${esc(u.id)}" aria-label="Choose ${esc(u.email)}">`}</td>
         <td dir="auto">${esc(u.name) || '<span class="no">-</span>'}</td>
         <td>${esc(u.email)}</td>
         <td class="num">${short(u.signedUp)}</td>
@@ -76,12 +80,53 @@
         <div class="hint">Active = opened the app while logged in, answered a question or used the AI that day.</div></div>
       <h2>Everyone who signed up</h2>
       <div class="card tablewrap"><table>
-        <thead><tr><th>Name</th><th>Email</th><th>Signed up</th><th>Last active</th><th>Days active</th><th>Came back</th><th>Files</th><th>Questions</th><th>Answers</th><th>Calendar + tasks</th><th>AI this week</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="11" class="no">Nobody yet.</td></tr>'}</tbody>
-      </table></div>
+        <thead><tr><th><input type="checkbox" id="pick-all" aria-label="Choose everyone except you"></th><th>Name</th><th>Email</th><th>Signed up</th><th>Last active</th><th>Days active</th><th>Came back</th><th>Files</th><th>Questions</th><th>Answers</th><th>Calendar + tasks</th><th>AI this week</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="12" class="no">Nobody yet.</td></tr>'}</tbody>
+      </table>
+        <div class="bar-actions">
+          <button id="del-btn" class="danger" disabled>Delete the chosen accounts</button>
+          <span class="hint" id="del-hint">Tick the test accounts to remove. Each one goes with all its data (files, questions, calendar, tasks). Your own account is never deleted here.</span>
+        </div></div>
       <h2>The AI answer check vs the students</h2>
       <div class="card">${aiCheck}</div>
       <h2>Latest feedback</h2>
       <div class="card">${fb}</div>`;
+    wireDelete();
+  }
+
+  // Beta clean-up (30/9): delete chosen test accounts, with all their data.
+  function wireDelete() {
+    const btn = document.getElementById('del-btn');
+    const all = document.getElementById('pick-all');
+    const picks = () => [...document.querySelectorAll('.pick')];
+    const update = () => {
+      const n = picks().filter(p => p.checked).length;
+      btn.disabled = n === 0;
+      btn.textContent = n ? `Delete ${n} account${n === 1 ? '' : 's'}` : 'Delete the chosen accounts';
+      if (all) all.checked = n > 0 && n === picks().length;
+    };
+    picks().forEach(p => { p.onchange = update; });
+    if (all) all.onchange = () => { picks().forEach(p => { p.checked = all.checked; }); update(); };
+    btn.onclick = async () => {
+      const ids = picks().filter(p => p.checked).map(p => p.value);
+      if (!ids.length || btn.disabled) return;
+      const typed = window.prompt(`This deletes ${ids.length} account${ids.length === 1 ? '' : 's'} and everything in them. It can't be undone.\n\nType DELETE to confirm:`);
+      if (typed !== 'DELETE') return;
+      btn.disabled = true;
+      btn.textContent = 'Deleting…';
+      try {
+        const res = await fetch('/api/admin/delete-users', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ ids, confirm: 'DELETE' })
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error((out.error && out.error.message) || `HTTP ${res.status}`);
+        window.alert(`Deleted ${out.deleted}.${out.skipped ? ` Skipped ${out.skipped} (owner).` : ''}${out.failed ? ` ${out.failed} failed - try again.` : ''}`);
+      } catch (err) {
+        window.alert(`Could not delete: ${err.message}`);
+      }
+      load();
+    };
   }
 })();

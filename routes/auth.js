@@ -4,7 +4,7 @@ const router = express.Router();
 const User = require('../models/User');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../middleware/ApiError');
-const { requireAuth, forgetUser, setTokenVersion } = require('../middleware/auth');
+const { requireAuth, setTokenVersion } = require('../middleware/auth');
 const limits = require('../middleware/rateLimit');
 const crypto = require('crypto');
 const mailer = require('../utils/mailer');
@@ -438,23 +438,7 @@ router.delete(
             throw new ApiError(403, 'That password is not right.');
         }
 
-        const userId = user._id;
-        // Google: revoke our access (best effort - Google being down must
-        // not keep someone's account alive). The "MindSync" calendar in
-        // their Google account is theirs; it stays.
-        try { await require('../rpc/google').disconnect(userId); } catch (err) {
-            console.warn('⚠️ Delete account: Google disconnect failed:', err.message);
-        }
-        await require('../rpc/storage').removeAllForUser(userId);
-        const models = ['Task', 'Event', 'Folder', 'FileItem', 'StudyItem', 'AiUsage', 'Feedback', 'GoogleLink', 'Settings', 'ActiveDay'];
-        const counts = {};
-        for (const name of models) {
-            const r = await require(`../models/${name}`).deleteMany({ userId });
-            counts[name] = r.deletedCount || 0;
-        }
-        await User.deleteOne({ _id: userId });
-        forgetUser(userId);
-        console.log(`🗑️ Account deleted: ${userId} ${JSON.stringify(counts)}`);
+        await require('../utils/deleteAccount').deleteAccount(user._id, 'by the user');
         res.json({ deleted: true });
     })
 );
