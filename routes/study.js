@@ -3,6 +3,7 @@ const router = express.Router();
 const StudyItem = require('../models/StudyItem');
 const Event = require('../models/Event');
 const asyncHandler = require('../middleware/asyncHandler');
+const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
 const { schedule, calibrationReport, OUTCOME_CORRECT } = require('../utils/scheduler');
 const { todayIso, nextExamByCourse, buildStudyQueue } = require('../utils/examSchedule');
@@ -363,13 +364,17 @@ router.get(
 
     // One row per subject, so the study screen can offer a course at a time.
     // Nearest exam first, then by what is actually waiting.
+    // Items per course, grouped once (30/9: filtering all items once per
+    // course was O(courses x items) - seconds of frozen server with many).
+    const itemsByCourse = new Map();
+    items.forEach(i => { const k = courseOf(i); if (!itemsByCourse.has(k)) itemsByCourse.set(k, []); itemsByCourse.get(k).push(i); });
     const subjects = Object.entries(byCategory)
       .map(([name, v]) => {
         const c = plan.byCourse[name] || { dueReviews: 0, newToday: 0, unseen: 0, exam: null };
         return {
           category: name,
           items: v.items,
-          readiness: readinessOf(items.filter(i => courseOf(i) === name)),
+          readiness: readinessOf(itemsByCourse.get(name) || []),
           due: c.dueReviews + c.newToday,
           dueReviews: c.dueReviews,
           newToday: c.newToday,
@@ -434,6 +439,7 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const { question, answer, mode, skillTag, category, sourceFile } = req.body;
+    await assertRoom(StudyItem, req.userId);
     const item = await StudyItem.create({ userId: req.userId, question, answer, mode, skillTag, category, sourceFile });
     res.status(201).json(item);
   })
@@ -448,6 +454,7 @@ router.post(
       throw new ApiError(400, 'items must be a non-empty array');
     }
     if (items.length > 200) throw new ApiError(400, 'Too many items in one request (max 200)');
+    await assertRoom(StudyItem, req.userId, items.length);
 
     const created = await StudyItem.insertMany(
       items.map(i => ({
@@ -529,9 +536,12 @@ router.post(
       confidence,
       outcome,
       wasCorrect: OUTCOME_CORRECT[outcome],
-      secondsSpent: Number(secondsSpent) || 0,
+      secondsSpent: Math.min(Math.max(Number(secondsSpent) || 0, 0), 24 * 3600),
       reviewedAt: new Date()
     });
+    // Keep the recent history only (30/9): answering the same question in a
+    // loop used to grow one document without end.
+    if (item.reviews.length > 300) item.reviews.splice(0, item.reviews.length - 300);
 
     item.interval = next.interval;
     item.ease = next.ease;
@@ -539,7 +549,7 @@ router.post(
     item.lapses = next.lapses;
     item.dueDate = next.dueDate;
 
-    await item.save();
+    await item.save({ validateModifiedOnly: true });
 
     res.json({
       item,

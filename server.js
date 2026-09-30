@@ -1,4 +1,8 @@
 require('dotenv').config();
+// The app's "today", "tomorrow" and the planner's hours are Israel time. The
+// server (Render) runs in UTC, so between midnight and 03:00 a task without
+// a date got yesterday's date. Set before anything reads the clock.
+if (!process.env.TZ) process.env.TZ = 'Asia/Jerusalem';
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -28,7 +32,7 @@ const PORT = process.env.PORT || 5000; // Render (and most hosts) inject PORT - 
 // Needed on Render/Heroku/etc. so Express reads the real client info from
 // the X-Forwarded-* headers the platform's proxy sets, instead of seeing
 // every request as coming from the proxy itself.
-app.set('trust proxy', 1);
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS) || 1);   // hops of proxies in front (Render: check the start-up log line "client address check")
 
 // ==========================================
 // Middlewares
@@ -54,16 +58,66 @@ app.use(
       : {} // no ALLOWED_ORIGINS set -> permissive default, fine for local dev
   )
 );
-app.use(express.json({ limit: '10mb' })); // headroom for pasted file/study-material content
+// ==========================================
+// Security headers (30/9 security pass)
+// ==========================================
+// No inline scripts anywhere in the app (the Google result page gets a
+// per-response nonce), so a script that somehow got into the page can't
+// run - the login token lives in localStorage on this origin. Frames are
+// refused (clickjacking), MIME sniffing is off.
+app.disable('x-powered-by');
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",   // style="" attributes are used throughout
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'"
+].join('; ');
+app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('X-Frame-Options', 'DENY');
+  res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.set('Content-Security-Policy', CSP);
+  next();
+});
 
-// TEMP DEBUG: logs every request that actually reaches Express, with how
-// long it took to respond. Remove once we've confirmed where requests are
-// getting stuck - this is diagnostic, not something to ship long-term.
+// ==========================================
+// Body size (30/9): small by default. A few routes carry real text (a
+// file's content, questions in bulk, the app's RPC calls) and get more -
+// but only with a valid-looking login, so an anonymous visitor can't make
+// the server read megabytes of JSON.
+// ==========================================
+const jwt = require('jsonwebtoken');
+const smallJson = express.json({ limit: '100kb' });
+const bigJson = express.json({ limit: '3mb' });
+const BIG_BODY = /^\/api\/(rpc|files|study\/bulk)(\/|$)/;
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/uploads')) return next();   // raw file bytes, its own parser + limit
+  if (BIG_BODY.test(req.path)) {
+    const [scheme, token] = String(req.headers.authorization || '').split(' ');
+    let ok = false;
+    try { ok = scheme === 'Bearer' && !!jwt.verify(token, process.env.JWT_SECRET); } catch (e) { ok = false; }
+    return (ok ? bigJson : smallJson)(req, res, next);
+  }
+  smallJson(req, res, next);
+});
+// No body / not JSON -> an empty object, so routes don't crash reading it.
+app.use((req, res, next) => {
+  if (req.body === undefined && !req.path.startsWith('/api/uploads')) req.body = {};
+  next();
+});
+
+// Request log: method, path (never the query string - it can carry
+// one-time codes), status and time.
 app.use((req, res, next) => {
   const started = Date.now();
-  console.log(`→ ${req.method} ${req.originalUrl}`);
   res.on('finish', () => {
-    console.log(`← ${req.method} ${req.originalUrl} ${res.statusCode} (${Date.now() - started}ms)`);
+    console.log(`${req.method} ${req.path} ${res.statusCode} (${Date.now() - started}ms)`);
   });
   next();
 });
@@ -71,7 +125,10 @@ app.use((req, res, next) => {
 // ==========================================
 // DB connection - with resilience for a long-running server
 // ==========================================
-mongoose.set('strictQuery', true);
+// 'throw', not true (30/9): with true, a filter on a field that isn't in
+// the schema is silently DROPPED - that's how Settings.findOne({ userId })
+// became findOne({}) and every user shared one list. Now it's an error.
+mongoose.set('strictQuery', 'throw');
 
 async function connectDB() {
   try {
@@ -83,6 +140,22 @@ async function connectDB() {
   }
 }
 connectDB();
+
+// Housekeeping (30/9), a minute after start and then daily: stored files no
+// file record points to, and indexes brought in line with the models (the
+// per-user Settings index became unique; an old non-unique one with the
+// same name would otherwise stay).
+async function housekeeping() {
+  try {
+    const n = await require('./rpc/storage').sweepOrphans();
+    if (n) console.log(`🧹 Removed ${n} stored file(s) nothing pointed to.`);
+  } catch (err) { console.warn('housekeeping (files):', err.message); }
+  try { await require('./models/Settings').syncIndexes(); } catch (err) { console.warn('housekeeping (indexes):', err.message); }
+}
+mongoose.connection.once('open', () => {
+  setTimeout(housekeeping, 60 * 1000).unref();
+  setInterval(housekeeping, 24 * 60 * 60 * 1000).unref();
+});
 
 mongoose.connection.on('error', (err) => console.error('❌ MongoDB runtime error:', err.message));
 mongoose.connection.on('disconnected', () => console.warn('⚠️  MongoDB disconnected. Mongoose will retry automatically.'));

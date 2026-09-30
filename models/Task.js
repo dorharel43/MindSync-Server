@@ -31,13 +31,15 @@ const taskSchema = new mongoose.Schema({
     title: {
         type: String,
         required: true,
-        trim: true
+        trim: true,
+        maxlength: [300, 'Task title is too long (max 300 characters)']
     },
     // Restored: the AI task-extraction flow sends this field.
     date: {
         type: String,
         default: 'Not set',
-        trim: true
+        trim: true,
+        maxlength: [40, 'Date is too long']
     },
     // The deadline as an actual date, for anything that needs to compare or
     // sort by it - the weekly planner above all.
@@ -85,7 +87,8 @@ const taskSchema = new mongoose.Schema({
     completedAt: { type: Date, default: null },
     subtasks: {
         type: [subtaskSchema],
-        default: []
+        default: [],
+        validate: [(v) => !v || v.length <= 100, 'Too many steps (max 100)']
     }
 }, {
     timestamps: true, // יוסיף אוטומטית תאריך יצירה ותאריך עדכון

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Task = require('../models/Task');
 const asyncHandler = require('../middleware/asyncHandler');
+const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
 const { requireAuth } = require('../middleware/auth');
 
@@ -57,9 +58,10 @@ router.post(
     const { title, date, dueDate, estimatedMinutes, urgency, category, subtasks } = req.body;
 
     const normalizedSubtasks = Array.isArray(subtasks)
-      ? subtasks.map((s) => (typeof s === 'string' ? { title: s, completed: false } : { title: s.title, completed: !!s.completed }))
+      ? subtasks.filter((s) => s != null).map((s) => (typeof s === 'string' ? { title: s, completed: false } : { title: s.title, completed: !!s.completed }))
       : [];
 
+    await assertRoom(Task, req.userId);
     const task = await Task.create({
       userId: req.userId,
       title, date, dueDate, estimatedMinutes, urgency, category,
@@ -75,12 +77,13 @@ router.put(
   asyncHandler(async (req, res) => {
     const { title, date, dueDate, estimatedMinutes, urgency, category, status } = req.body;
     // Load + save (not findOneAndUpdate) so the model's save hook runs and
-    // stamps completedAt when the status changes (30/9).
+    // stamps completedAt when the status changes (30/9). validateModifiedOnly:
+    // an old task made before today's length limits can still be completed.
     const task = await Task.findOne({ _id: req.params.id, userId: req.userId });
     if (!task) throw new ApiError(404, 'Task not found');
     const changes = { title, date, dueDate, estimatedMinutes, urgency, category, status };
     Object.entries(changes).forEach(([k, v]) => { if (v !== undefined) task[k] = v; });
-    await task.save();
+    await task.save({ validateModifiedOnly: true });
     res.json(task);
   })
 );
@@ -103,7 +106,7 @@ router.post(
     // BUG FIX: adding a step to a finished task left it "completed" with an
     // unchecked step in it. A new step means there's work left - reopen.
     task.status = 'open';
-    await task.save();
+    await task.save({ validateModifiedOnly: true });
     res.status(201).json(task);
   })
 );
@@ -135,7 +138,7 @@ router.patch(
       else if (req.body.completed === false) task.status = 'open';
     }
 
-    await task.save();
+    await task.save({ validateModifiedOnly: true });
     res.json(task);
   })
 );
@@ -158,7 +161,7 @@ router.delete(
       task.status = 'completed';
     }
 
-    await task.save();
+    await task.save({ validateModifiedOnly: true });
     res.json(task);
   })
 );

@@ -140,7 +140,11 @@ rep("""    await api.hardReset();
 
 # ---- 5. nothing desktop-only may survive ---------------------------------
 code_only = re.sub(r'//[^\n]*', '', s)   # comments may mention these words
-for bad in [r"require\('electron'\)", r"\bdialog\.\w+\(", r"\bfs\.\w+Sync\(", r"\bapp\.getPath", r"(?<![.\w])exec\(", r"authenticateGoogle", r"callGoogleWithReauth", r"\blogger\."]:
+# 30/9: broadened - anything that runs programs, opens things on the machine
+# or reads/writes files by path must never reach the server.
+for bad in [r"require\('electron'\)", r"\bdialog\.\w+\(", r"\bfs\.\w+Sync\(", r"\bfs\.(promises|readFile|writeFile|createReadStream|createWriteStream|unlink|rm|readdir)\b", r"\bfsp\.",
+            r"\bapp\.getPath", r"(?<![.\w])exec(Sync|File|FileSync)?\(", r"\bspawn(Sync)?\(", r"child_process", r"openExternal", r"openPath",
+            r"authenticateGoogle", r"callGoogleWithReauth", r"\blogger\."]:
     assert not re.search(bad, code_only), f'desktop-only code left in handlers: {bad}'
 
 open('rpc/handlers.js', 'w', encoding='utf-8').write(s)

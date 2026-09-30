@@ -13,13 +13,31 @@ const storage = require('./storage');
 const { extractPdfText } = require('./pdfExtract');
 
 const router = express.Router();
+const limits = require('../middleware/rateLimit');
+const uploadLimit = limits.rateLimit({
+    name: 'upload-user', windowMs: 10 * 60 * 1000, max: Number(process.env.UPLOADS_PER_10MIN) || 150, key: limits.byUser,
+    message: 'Too many uploads in a short time. Wait a few minutes and try again.'
+});
+// Reading a PDF's text is CPU work; at most 2 at a time for the whole server.
+let extracting = 0;
+const waiting = [];
+async function withExtractSlot(fn) {
+    if (extracting >= 2) await new Promise(r => waiting.push(r));
+    extracting += 1;
+    try { return await fn(); } finally {
+        extracting -= 1;
+        const next = waiting.shift();
+        if (next) next();
+    }
+}
 const TEXT_TYPES = ['txt', 'md', 'java', 'py', 'js', 'html', 'css', 'json'];
 
-router.post('/', requireAuth,
+router.post('/', requireAuth, uploadLimit,
     express.raw({ type: () => true, limit: storage.MAX_FILE_BYTES + 1024 * 1024 }),
     async (req, res, next) => {
         try {
-            const name = decodeURIComponent(String(req.headers['x-file-name'] || '')).trim().slice(0, 250);
+            let name = '';
+            try { name = decodeURIComponent(String(req.headers['x-file-name'] || '')).trim().slice(0, 250); } catch (e) { name = ''; }
             if (!name) throw new ApiError(400, 'Missing file name.');
             const ext = path.extname(name).slice(1).toLowerCase();
             if (ext !== 'pdf' && !TEXT_TYPES.includes(ext)) throw new ApiError(415, `.${ext} files aren't supported. Supported: pdf, ${TEXT_TYPES.join(', ')}.`);
@@ -30,16 +48,26 @@ router.post('/', requireAuth,
             let filePath = '';
             if (ext === 'pdf') {
                 if (buffer.slice(0, 5).toString() !== '%PDF-') throw new ApiError(415, 'This doesn\'t look like a PDF file.');
+                const info = {};
                 try {
-                    fileContent = await extractPdfText(buffer);
+                    fileContent = String(await withExtractSlot(() => extractPdfText(buffer, info)) || '').slice(0, 1500000);
                 } catch (err) {
                     // A scanned or unusual PDF: no text, but the AI can still
                     // read the stored original directly.
                     console.warn('upload: text extraction failed:', err.message);
                 }
-                filePath = await storage.save(req.userId, name, buffer, 'application/pdf');
+                // Storage full (the user's or everyone's): keep the TEXT anyway
+                // (30/9 - the whole upload used to fail). Only reading the
+                // PDF itself (tables, formulas) isn't possible for this file.
+                try {
+                    filePath = await storage.save(req.userId, name, buffer, 'application/pdf', { numPages: info.numPages || null });
+                } catch (err) {
+                    if (!(err.status === 413 || err.status === 507) || !fileContent.trim()) throw err;
+                    console.warn('upload: original not stored:', err.message);
+                    return res.status(201).json({ fileName: name, fileContent, filePath: '', warning: err.message });
+                }
             } else {
-                fileContent = buffer.toString('utf-8');
+                fileContent = buffer.toString('utf-8').slice(0, 1500000);
             }
             res.status(201).json({ fileName: name, fileContent, filePath });
         } catch (err) {

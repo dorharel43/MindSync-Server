@@ -24,6 +24,8 @@ router.post(
       Folder.deleteMany({ userId: req.userId }),
       FileItem.deleteMany({ userId: req.userId }),
       StudyItem.deleteMany({ userId: req.userId }),
+      // The uploaded originals too (30/9).
+      require('../rpc/storage').removeAllForUser(req.userId).catch(() => {}),
     ]);
     res.json({ success: true });
   })
@@ -41,21 +43,28 @@ const AiUsage = require('../models/AiUsage');
 const Feedback = require('../models/Feedback');
 const { todayIso } = require('../utils/examSchedule');
 
-function adminEmails() {
-  return String(process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-}
+// Who is the owner (30/9):
+//   ADMIN_USER_IDS - account ids (best: can't be claimed by anyone else)
+//   ADMIN_EMAILS   - emails. Emails aren't verified, so ONLY list an email
+//                    that is already registered - an unregistered one could
+//                    be signed up by anybody. The owner's page shows its own
+//                    account id, to move to ADMIN_USER_IDS.
+const list = (v) => String(v || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 async function requireOwner(req, res, next) {
   try {
-    const allowed = adminEmails();
-    const me = allowed.length ? await User.findById(req.userId).select('email').lean() : null;
-    if (!me || !allowed.includes(String(me.email).toLowerCase())) {
-      return res.status(404).json({ error: { message: 'Not found' } });
+    const ids = list(process.env.ADMIN_USER_IDS);
+    const emails = list(process.env.ADMIN_EMAILS);
+    let ok = ids.includes(String(req.userId).toLowerCase());
+    if (!ok && emails.length) {
+      const me = await User.findById(req.userId).select('email').lean();
+      ok = !!me && emails.includes(String(me.email).toLowerCase());
     }
+    if (!ok) return res.status(404).json({ error: { message: 'Not found.', status: 404 } });
     next();
   } catch (err) { next(err); }
 }
 
-// "dor.harel@gmail.com" -> "do***@gmail.com": enough to tell testers apart,
+// "someone@example.com" -> "so***@example.com": enough to tell testers apart,
 // without a list of full addresses on a screen.
 function maskEmail(email) {
   const [name, domain] = String(email || '').split('@');
@@ -145,6 +154,7 @@ router.get(
     const nameOf = new Map(users.map(x => [String(x._id), x.name || maskEmail(x.email)]));
     res.json({
       today,
+      you: String(req.userId),
       summary: {
         users: rows.length,
         newThisWeek: rows.filter(r => r.signedUp >= weekAgo).length,

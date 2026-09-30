@@ -9,7 +9,7 @@ const settingsSchema = new mongoose.Schema(
     // field wasn't in the schema - with strictQuery on, Mongoose drops the
     // unknown filter, so findOne({ userId }) became findOne({}) and EVERY
     // user shared the first user's blocked-apps list.
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: { unique: true, sparse: true } },
     blockedApps: {
       type: [String],
       default: ['steam.exe', 'Battle.net.exe', 'EpicGamesLauncher.exe', 'LeagueClient.exe', 'Discord.exe'],

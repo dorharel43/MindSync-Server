@@ -35,11 +35,18 @@ function requireAuth(req, res, next) {
             : 'Invalid or tampered token.';
         return next(new ApiError(401, message));
     }
+    // Only login tokens are logins. Anything signed for another purpose
+    // (e.g. the Google connect 'state', which travels in URLs) is refused.
+    if (!payload || typeof payload.sub !== 'string' || payload.purpose) {
+        return next(new ApiError(401, 'Invalid or tampered token.'));
+    }
     // A valid token for an account that was deleted: refused. Tokens live 30
     // days, so without this an app left open elsewhere would keep writing
     // data for a user who no longer exists.
-    userStillExists(payload.sub).then(ok => {
-        if (!ok) return next(new ApiError(401, 'This account no longer exists.'));
+    userStillExists(payload.sub).then(found => {
+        if (!found) return next(new ApiError(401, 'This account no longer exists.'));
+        // Made before the last password change -> no longer valid (30/9).
+        if ((payload.tv || 0) !== (found.tv || 0)) return next(new ApiError(401, 'Your session ended. Please log in again.'));
         req.userId = payload.sub;
         markActive(payload.sub);
         next();
@@ -68,27 +75,32 @@ function markActive(userId) {
 const CHECK_TTL_MS = 5 * 60 * 1000;
 const checkedAt = new Map();   // userId -> when it was last found
 const deletedIds = new Set();
+// Returns { tv } (the account's token version) or false when it's gone.
 async function userStillExists(userId) {
     const id = String(userId || '');
     if (!id || deletedIds.has(id)) return false;
-    const t = checkedAt.get(id);
-    if (t && Date.now() - t < CHECK_TTL_MS) return true;
-    let found = false;
+    const c = checkedAt.get(id);
+    if (c && Date.now() - c.at < CHECK_TTL_MS) return c;
+    let user = null;
     try {
-        found = !!(await require('../models/User').exists({ _id: id }));
+        user = await require('../models/User').findById(id).select('tokenVersion').lean();
     } catch (err) {
         if (err.name === 'CastError') return false;   // not a valid id at all
         throw err;                                    // the database is down: a 500, not "logged out"
     }
-    if (found) {
-        if (checkedAt.size > 10000) checkedAt.clear();
-        checkedAt.set(id, Date.now());
-    }
-    return found;
+    if (!user) return false;
+    if (checkedAt.size > 10000) checkedAt.clear();
+    const entry = { at: Date.now(), tv: user.tokenVersion || 0 };
+    checkedAt.set(id, entry);
+    return entry;
 }
 function forgetUser(userId) {
     checkedAt.delete(String(userId));
     deletedIds.add(String(userId));
 }
+// The password changed: the new version applies at once on this server.
+function setTokenVersion(userId, tv) {
+    checkedAt.set(String(userId), { at: Date.now(), tv });
+}
 
-module.exports = { requireAuth, forgetUser };
+module.exports = { requireAuth, forgetUser, setTokenVersion };

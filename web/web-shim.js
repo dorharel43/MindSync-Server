@@ -116,10 +116,16 @@
                 const ok = all.filter(f => SUPPORTED.includes((f.name.split('.').pop() || '').toLowerCase()) && !f.name.startsWith('.') && !f.name.startsWith('~$'))
                     .sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, undefined, { numeric: true }));
                 const folderName = mode === 'folder' && all[0].webkitRelativePath ? all[0].webkitRelativePath.split('/')[0] : null;
-                const files = ok.slice(0, MAX_FILES).map(f => {
+                // Same name in two subfolders -> keep the subfolder in the name
+                // (see select-upload-files in the desktop main.js).
+                const kept = ok.slice(0, MAX_FILES);
+                const baseCount = {};
+                kept.forEach(f => { baseCount[f.name] = (baseCount[f.name] || 0) + 1; });
+                const files = kept.map(f => {
                     const key = `browser:${++pickCounter}`;
                     picked.set(key, f);
-                    return { path: key, name: f.name };
+                    const rel = (f.webkitRelativePath || '').split('/').slice(1).join('/');
+                    return { path: key, name: baseCount[f.name] > 1 && rel ? rel : f.name };
                 });
                 done({ files, folderName, truncated: ok.length > MAX_FILES, maxFiles: MAX_FILES, supported: SUPPORTED });
             });
@@ -181,6 +187,16 @@
             if (channel) channel.postMessage('logged-out');
             setTimeout(() => window.location.replace('/'), 2500);
             return { success: true };
+        },
+        // New password: other devices are logged out; this tab (and its
+        // sibling tabs - same storage) keeps working with the new token.
+        'auth-change-password': async ({ currentPassword, newPassword } = {}) => {
+            try {
+                const { token } = await api('POST', '/auth/change-password',
+                    { currentPassword: String(currentPassword || ''), newPassword: String(newPassword || '') }, { reloadOn401: false });
+                setToken(token);
+                return { success: true };
+            } catch (err) { return { error: err.message }; }
         },
         'auth-logout': async () => {
             setToken(null);
@@ -253,12 +269,31 @@
         'test-gemini-key': async () => ({ ok: true })
     };
 
+    // Failures answer like the desktop app does (30/9) - it never throws:
+    // lists come back empty, anything else as { error }. Throwing left
+    // buttons stuck on "Saving…" / "Uploading…" when the connection dropped
+    // or the server was waking up. (A 401 still reloads to the login.)
+    const LIST_CHANNELS = new Set(['get-tasks', 'get-events', 'get-folders', 'get-files', 'get-files-light',
+        'get-study-items', 'get-due-study-items', 'get-study-categories', 'get-task-categories', 'get-blocked-apps']);
+    const NULL_CHANNELS = new Set(['get-study-stats', 'get-profile']);
+    // These answer with JSON TEXT (the renderer JSON.parse()s it) - so a
+    // failure is JSON text too, or the real reason became "not valid JSON".
+    const JSON_TEXT_CHANNELS = new Set(['add-smart-task', 'parse-smart-event', 'generate-weekly-plan',
+        'generate-study-items', 'generate-study-items-pdf']);
     async function invoke(name, ...args) {
         if (local[name]) return local[name](...args);
         await whenLoggedIn;
-        const res = await api('POST', `/rpc/${encodeURIComponent(name)}`, { args });
-        emit(res.events);
-        return res.result;
+        try {
+            const res = await api('POST', `/rpc/${encodeURIComponent(name)}`, { args });
+            emit(res.events);
+            return res.result;
+        } catch (err) {
+            const strict = args[0] && typeof args[0] === 'object' && args[0].strict;
+            if (LIST_CHANNELS.has(name) && !strict) return [];
+            if (NULL_CHANNELS.has(name)) return null;
+            if (JSON_TEXT_CHANNELS.has(name)) return JSON.stringify({ error: err.message });
+            return { error: err.message };
+        }
     }
 
     const ipcRenderer = {
