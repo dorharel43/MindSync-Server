@@ -19,8 +19,12 @@ const TIMEOUT_MS = 10000;
 // MAIL_FROM as typed into Render (30/9): spaces or a line break around it,
 // quotes, or the "MindSync <x@gmail.com>" form all made Brevo answer "valid
 // sender email required". Take just the address.
+// Invisible characters that come along with copy-paste (right-to-left
+// marks from a Hebrew page, zero-width spaces, a non-breaking space) look
+// like nothing on screen but make the address invalid.
+const INVISIBLE = /[\u00A0\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
 function senderAddress() {
-  let v = String(process.env.MAIL_FROM || '').trim().replace(/^["']+|["']+$/g, '').trim();
+  let v = String(process.env.MAIL_FROM || '').replace(INVISIBLE, '').trim().replace(/^["']+|["']+$/g, '').trim();
   const angle = /<([^<>]+)>/.exec(v);
   if (angle) v = angle[1].trim();
   v = v.replace(/^mailto:/i, '').trim();
@@ -34,6 +38,35 @@ function mailEnabled() {
 // Said once at start-up, so a mistyped setting shows in the Render log.
 if (process.env.MAIL_FROM && !senderAddress()) {
   console.warn('✉️ MAIL_FROM on Render is not an email address - set it to just the address (e.g. mindsync.app@gmail.com). Email is off until then.');
+}
+if (process.env.MAIL_FROM && INVISIBLE.test(process.env.MAIL_FROM)) {
+  console.warn('✉️ MAIL_FROM had invisible characters in it (from copy-paste) - they are ignored. Better: type the address again on Render.');
+}
+
+// Start-up check (30/9): asks Brevo which senders are verified and says in
+// the log whether MAIL_FROM is one of them - the usual reason Brevo refuses
+// with "valid sender email required". Only the app's own sender addresses
+// are written to the log, never the key.
+async function checkSetup() {
+  if (!mailEnabled()) return;
+  const from = senderAddress();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(`${BASE()}/senders`, { signal: ctrl.signal, headers: { 'api-key': String(process.env.BREVO_API_KEY).trim(), accept: 'application/json' } });
+    if (res.status === 401) return console.warn('✉️ Brevo says the BREVO_API_KEY is not valid - create an API key (it starts with xkeysib-) under SMTP & API > API Keys.');
+    if (!res.ok) return console.warn(`✉️ Brevo sender check: HTTP ${res.status}`);
+    const data = await res.json();
+    const senders = (data && data.senders) || [];
+    const mine = senders.find(x => String(x.email || '').toLowerCase() === from.toLowerCase());
+    if (mine && mine.active !== false) console.log(`✉️ Email is on: sending as ${mine.name || 'MindSync'} <${from}> (a verified Brevo sender).`);
+    else if (mine) console.warn(`✉️ ${from} is a Brevo sender but NOT verified yet - open the code Brevo emailed to it, or verify it under Senders.`);
+    else console.warn(`✉️ MAIL_FROM (${from}) is not one of your Brevo senders. Senders in Brevo: ${senders.map(x => `${x.email}${x.active === false ? ' (not verified)' : ''}`).join(', ') || 'none'}. Set MAIL_FROM to a verified one.`);
+  } catch (err) {
+    console.warn('✉️ Brevo sender check failed:', err.name === 'AbortError' ? 'no answer' : err.message);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // The address links in emails point to. NEVER taken from the request's Host
@@ -69,7 +102,8 @@ async function sendMail({ to, toName, subject, html, text }) {
     if (!res.ok) {
       let detail = '';
       try { const d = await res.json(); detail = d && (d.message || d.code) ? ` (${String(d.message || d.code).slice(0, 200)})` : ''; } catch (e) { /* not JSON */ }
-      throw new Error(`Brevo refused the email: HTTP ${res.status}${detail}`);
+      const hint = /sender/i.test(detail) ? ` - sent as ${JSON.stringify(senderAddress())}; it must be a verified sender in Brevo` : '';
+      throw new Error(`Brevo refused the email: HTTP ${res.status}${detail}${hint}`);
     }
     return true;
   } catch (err) {
@@ -80,4 +114,4 @@ async function sendMail({ to, toName, subject, html, text }) {
   }
 }
 
-module.exports = { mailEnabled, publicUrl, sendMail };
+module.exports = { mailEnabled, publicUrl, sendMail, checkSetup, senderAddress };

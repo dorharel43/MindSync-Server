@@ -153,6 +153,7 @@ async function housekeeping() {
   try { await require('./models/Settings').syncIndexes(); } catch (err) { console.warn('housekeeping (indexes):', err.message); }
 }
 mongoose.connection.once('open', () => {
+  require('./utils/mailer').checkSetup();   // says in the log whether email will work
   setTimeout(housekeeping, 60 * 1000).unref();
   setInterval(housekeeping, 24 * 60 * 60 * 1000).unref();
 });
