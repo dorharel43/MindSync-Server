@@ -21,6 +21,15 @@ const reviewSchema = new mongoose.Schema({
     // Derived once at review time so calibration queries don't have to
     // re-interpret the outcome vocabulary of each mode.
     wasCorrect: { type: Boolean, required: true },
+    // What the AI check said (30/9), when the answer was checked - the
+    // outcome it suggested. Differs from `outcome` when the student
+    // disagreed and picked another one: how often that happens is how
+    // often the check is wrong (the owner's beta page shows it).
+    aiSuggested: {
+        type: String,
+        enum: ['got_it', 'partial', 'missed', 'solved', 'stuck', 'wrong', null],
+        default: null
+    },
     reviewedAt: { type: Date, default: Date.now },
     secondsSpent: { type: Number, default: 0 }
 }, { _id: false });

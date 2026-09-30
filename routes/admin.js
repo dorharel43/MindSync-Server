@@ -85,7 +85,7 @@ router.get(
     const [users, activeRows, items, files, tasks, events, ai, feedback] = await Promise.all([
       User.find({}).select('name email createdAt').lean(),
       ActiveDay.find({ day: { $gte: since } }).lean(),
-      StudyItem.find({}).select('userId reviews.reviewedAt').lean(),
+      StudyItem.find({}).select('userId reviews.reviewedAt reviews.outcome reviews.aiSuggested').lean(),
       FileItem.find({}).select('userId').lean(),
       Task.find({}).select('userId').lean(),
       Event.find({}).select('userId').lean(),
@@ -104,6 +104,14 @@ router.get(
     };
     activeRows.forEach(r => u(r.userId).days.add(r.day));
     const reviewsPerDay = {};
+    // The AI check vs the student (30/9), last 30 days: answers the AI
+    // checked, and how many the student marked differently - "stricter"
+    // = the student gave themselves less than the AI did, "kinder" = more.
+    // Many "stricter" = the check lets wrong answers through; many "kinder"
+    // = the check is too harsh (or students are generous with themselves).
+    const RANK = { got_it: 2, solved: 2, partial: 1, stuck: 1, missed: 0, wrong: 0 };
+    const checkSince = daysAgo(29);
+    const aiCheck = { checked: 0, agreed: 0, stricter: 0, kinder: 0 };
     items.forEach(it => {
       const p = u(it.userId);
       p.questions += 1;
@@ -113,6 +121,11 @@ router.get(
         p.answers += 1;
         if (d >= weekAgo) p.answersWeek += 1;
         if (d >= since) { p.days.add(d); reviewsPerDay[d] = (reviewsPerDay[d] || 0) + 1; }
+        if (r.aiSuggested && d >= checkSince && r.aiSuggested in RANK && r.outcome in RANK) {
+          aiCheck.checked += 1;
+          const diff = RANK[r.outcome] - RANK[r.aiSuggested];
+          if (diff === 0) aiCheck.agreed += 1; else if (diff < 0) aiCheck.stricter += 1; else aiCheck.kinder += 1;
+        }
       });
     });
     files.forEach(f => { u(f.userId).files += 1; });
@@ -162,7 +175,8 @@ router.get(
         activeThisWeek: rows.filter(r => r.lastActive && r.lastActive >= weekAgo).length,
         cameBack: rows.filter(r => r.cameBack).length,
         answersThisWeek: rows.reduce((n, r) => n + r.answersWeek, 0),
-        aiToday
+        aiToday,
+        aiCheck
       },
       daily,
       users: rows,
