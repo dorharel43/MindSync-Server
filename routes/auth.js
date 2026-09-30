@@ -299,7 +299,7 @@ function resultPage(res, status, lang, title, text, { email = '', openHref = '/a
     const he = lang === 'he';
     const esc = emails.esc;
     res.status(status).type('html').send(`<!DOCTYPE html><html lang="${he ? 'he' : 'en'}" dir="${he ? 'rtl' : 'ltr'}"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>MindSync</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>MindSync</title><link rel="icon" href="/favicon.ico" sizes="any">
 <style>body{margin:0;background:#f5f6f8;color:#1d2433;font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
 .c{max-width:440px;margin:12vh auto 0;background:#fff;border:1px solid #e4e6eb;border-radius:10px;padding:28px 26px}
 h1{font-size:20px;margin:0 0 8px}p{margin:0 0 18px;color:#4b5563}p.e{margin:-4px 0 12px;font-weight:600;color:inherit;word-break:break-all}a{display:inline-block;background:#2f64d6;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600}

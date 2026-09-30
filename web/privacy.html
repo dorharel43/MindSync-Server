@@ -4,111 +4,209 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>MindSync - Privacy policy</title>
+    <meta name="title-he" content="MindSync - מדיניות פרטיות">
+    <meta name="title-en" content="MindSync - Privacy policy">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <meta name="theme-color" content="#2f64d6">
+    <script src="/app/pages.js"></script>
     <style>
-        :root { --bg: #f7f8fb; --card: #fff; --text: #1d2433; --muted: #5b6475; --accent: #2f5fd6; --line: #e6e8ef; }
-        @media (prefers-color-scheme: dark) { :root { --bg: #11151c; --card: #181d26; --text: #e8ebf2; --muted: #a2aabb; --accent: #6d95ff; --line: #262c38; } }
+        :root { --bg: #f7f8fb; --card: #fff; --text: #1d2433; --muted: #5b6475; --accent: #2f64d6; --line: #e6e8ef; }
+        @media (prefers-color-scheme: dark) { :root { --bg: #11151c; --card: #181d26; --text: #e8ebf2; --muted: #a2aabb; --accent: #7aa2f7; --line: #262c38; } }
         body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.65; }
-        main { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+        html:not(.lang-he) [data-lang="he"], html.lang-he [data-lang="en"] { display: none !important; }
+        main { max-width: 760px; margin: 0 auto; padding: 24px 20px 64px; }
         a { color: var(--accent); }
         h1 { font-size: 30px; margin: 0 0 4px; }
         h2 { font-size: 19px; margin: 32px 0 8px; }
         .muted { color: var(--muted); }
-        ul { padding-left: 22px; }
+        ul { padding-inline-start: 22px; }
         li { margin: 4px 0; }
         .box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; }
-        .he { direction: rtl; text-align: right; }
+        .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+        .langs { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+        .langs button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; padding: 5px 10px; cursor: pointer; }
+        .langs button[aria-pressed="true"] { background: var(--card); color: var(--text); font-weight: 600; }
     </style>
 </head>
 <body>
 <main>
-    <p><a href="/">← MindSync</a></p>
-    <h1>Privacy policy</h1>
-    <p class="muted">Last updated: {{UPDATED}}</p>
-
-    <p>
-        MindSync is a study assistant for students: it keeps your course files, tasks and calendar in one place,
-        writes summaries and practice questions with AI, and can add your study plan to Google Calendar.
-        This page explains what information MindSync keeps, why, and what control you have over it.
-    </p>
-
-    <h2>What we keep</h2>
-    <ul>
-        <li><strong>Your account:</strong> email address, a securely hashed password (never the password itself), your name and degree.</li>
-        <li><strong>What you put in the app:</strong> tasks, calendar events, folders, the files you upload (and the text extracted from them), summaries, practice questions and your review history.</li>
-        <li><strong>Feedback</strong> you send from Settings, with your account id and browser type, so we can reply and fix problems.</li>
-        <li><strong>Usage counters:</strong> how many AI actions you used each day, to apply the daily limit, and on which days you used the app, so we can see whether it's useful enough to come back to. Only the app's owner sees these numbers.</li>
-        <li><strong>Server logs:</strong> technical records of requests (address and time), kept for a short time to find errors.</li>
-    </ul>
-    <p>
-        We do not sell your information, show ads, or use advertising or tracking cookies. The app stores your login session
-        and display preferences in your browser's local storage.
-    </p>
-
-    <h2>Emails we send</h2>
-    <p>
-        MindSync emails you only about your account: a welcome email with a link to confirm your address when you sign up,
-        and a link to choose a new password when you ask for one. No newsletters or marketing. The emails are sent through
-        <a href="https://www.brevo.com/legal/privacypolicy/" rel="noopener">Brevo</a>, which receives your email address, your name
-        and the email's text for that purpose only.
-    </p>
-
-    <h2>How the AI features use your files</h2>
-    <p>
-        When you ask for a summary, practice questions or to read a syllabus, the content of that file is sent to
-        Google's Gemini API to produce the result, which is then saved in your account. It is sent only for the action you asked for.
-        Google processes it under the <a href="https://ai.google.dev/gemini-api/terms" rel="noopener">Gemini API terms</a>.
-    </p>
-
-    <h2>Google Calendar</h2>
-    <div class="box">
-        <p>Connecting Google Calendar is optional. If you connect it:</p>
-        <ul>
-            <li>MindSync asks for permission to <strong>create its own calendar and manage the events in it</strong>
-                (<code>calendar.app.created</code>), plus your Google email address to show which account is connected.</li>
-            <li>MindSync creates one calendar called "MindSync" in your account and adds, changes and removes only the events you
-                choose to sync (classes, exams, study blocks). It <strong>cannot see or change your other calendars or events</strong>.</li>
-            <li>The access token Google gives us is stored encrypted and is used only to update that calendar when you ask.</li>
-            <li>You can disconnect at any time in MindSync (Settings → Google Calendar → Disconnect), which also cancels the access with Google,
-                or from your Google Account at <a href="https://myaccount.google.com/permissions" rel="noopener">myaccount.google.com/permissions</a>.
-                Events already added stay in the "MindSync" calendar until you delete that calendar in Google Calendar.</li>
-        </ul>
-        <p>
-            MindSync's use and transfer of information received from Google APIs adheres to the
-            <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener">Google API Services User Data Policy</a>,
-            including the Limited Use requirements. Information from your Google account is not used for advertising,
-            not sold, not used to train AI models, and not shared with anyone except as needed to provide this feature.
-        </p>
+    <div class="top">
+        <a href="/"><span data-lang="he">MindSync →</span><span data-lang="en">← MindSync</span></a>
+        <div class="langs" role="group" aria-label="Language / שפה">
+            <button type="button" data-set-lang="he" lang="he">עברית</button>
+            <button type="button" data-set-lang="en" lang="en">English</button>
+        </div>
     </div>
 
-    <h2>Where it is stored</h2>
-    <p>
-        Your data is stored in a MongoDB Atlas database and the app runs on Render (cloud hosting). Connections to the app are encrypted (HTTPS).
-        These providers store and process the data on our behalf only.
-    </p>
+    <!-- ================= Hebrew ================= -->
+    <article data-lang="he">
+        <h1>מדיניות פרטיות</h1>
+        <p class="muted">עודכן לאחרונה: {{UPDATED}}</p>
 
-    <h2>Deleting your information</h2>
-    <ul>
-        <li>You can delete any file, task, event or question in the app at any time.</li>
-        <li>Settings → <em>Reset all data</em> deletes all your tasks, calendar items, files and questions at once.</li>
-        <li>Settings → <em>Delete account</em> deletes your account and all its data right away (you confirm with your password). It also disconnects Google Calendar.</li>
-    </ul>
+        <p>
+            MindSync היא אפליקציית למידה לסטודנטים: היא שומרת במקום אחד את קבצי הקורסים, המשימות והלוח שלך,
+            כותבת סיכומים ושאלות תרגול בעזרת AI, ויכולה להוסיף את תוכנית הלימוד ל-Google Calendar.
+            העמוד הזה מסביר איזה מידע MindSync שומרת, למה, ומה השליטה שיש לך עליו.
+        </p>
 
-    <h2>Children</h2>
-    <p>MindSync is meant for students aged 16 and over and is not directed at children.</p>
+        <h2>מה נשמר</h2>
+        <ul>
+            <li><strong>החשבון שלך:</strong> כתובת מייל, הסיסמה בצורה מוצפנת חד-כיוונית (אף פעם לא הסיסמה עצמה), השם ותחום הלימודים.</li>
+            <li><strong>מה שמכניסים לאפליקציה:</strong> משימות, אירועים בלוח, תיקיות, הקבצים שמעלים (והטקסט שחולץ מהם), סיכומים, שאלות תרגול והיסטוריית התרגול.</li>
+            <li><strong>משוב</strong> שנשלח מההגדרות, יחד עם מזהה החשבון וסוג הדפדפן, כדי שנוכל לענות ולתקן.</li>
+            <li><strong>מונים של שימוש:</strong> כמה פעולות AI נוצלו בכל יום (בשביל המכסה היומית), ובאילו ימים נעשה שימוש באפליקציה - כדי לדעת אם היא מועילה. רק בעל האפליקציה רואה את המספרים האלה.</li>
+            <li><strong>יומני שרת:</strong> רישום טכני של בקשות (כתובת ושעה), לזמן קצר, כדי למצוא תקלות. בנוסף, לצורך מניעת ניצול לרעה, השרת סופר בזיכרון בלבד כמה בקשות AI הגיעו מכל כתובת רשת באותו יום.</li>
+        </ul>
+        <p>
+            המידע לא נמכר, אין פרסומות ואין עוגיות פרסום או מעקב. האפליקציה שומרת בדפדפן רק את החיבור שלך והעדפות תצוגה.
+        </p>
 
-    <h2>Changes</h2>
-    <p>If this policy changes, the new version will be posted on this page with a new date.</p>
+        <h2>מיילים שנשלחים</h2>
+        <p>
+            MindSync שולחת מיילים רק בנוגע לחשבון: מייל "ברוכים הבאים" עם קישור לאישור הכתובת בהרשמה,
+            וקישור לבחירת סיסמה חדשה כשמבקשים. אין ניוזלטרים ואין שיווק. המיילים נשלחים דרך
+            <a href="https://www.brevo.com/legal/privacypolicy/" rel="noopener">Brevo</a>, שמקבל את כתובת המייל, השם ותוכן המייל - רק למטרה הזאת.
+        </p>
 
-    <h2>Contact</h2>
-    <p>{{CONTACT}}</p>
+        <h2>איך תכונות ה-AI משתמשות בקבצים שלך</h2>
+        <p>
+            כשמבקשים סיכום, שאלות תרגול או קריאת סילבוס, תוכן הקובץ נשלח ל-Gemini API של Google כדי ליצור את התוצאה,
+            והתוצאה נשמרת בחשבון שלך. הקובץ נשלח רק לפעולה שביקשת.
+            Google מעבדת אותו לפי <a href="https://ai.google.dev/gemini-api/terms" rel="noopener">תנאי ה-Gemini API</a>.
+            התוצאות נכתבות על ידי AI ועלולות לכלול טעויות.
+        </p>
 
-    <h2 class="he">בקצרה, בעברית</h2>
-    <p class="he">
-        MindSync שומרת את מה שאתם מכניסים לאפליקציה (משימות, אירועים, קבצים, שאלות תרגול) כדי להציג אותו לכם, ולא מוכרת אותו לאף אחד.
-        כשמבקשים סיכום או שאלות, תוכן הקובץ נשלח ל-Gemini של גוגל כדי ליצור את התוצאה.
-        החיבור ל-Google Calendar הוא רשות: האפליקציה יוצרת בחשבון שלכם לוח שנה בשם "MindSync" ורואה ומשנה רק אותו, לא את שאר היומנים שלכם.
-        אפשר לנתק בכל רגע בהגדרות, ולמחוק את כל המידע דרך "Reset all data", או את כל החשבון דרך "Delete account".
-    </p>
+        <h2>Google Calendar</h2>
+        <div class="box">
+            <p>החיבור ל-Google Calendar הוא לא חובה. אם מחברים אותו:</p>
+            <ul>
+                <li>MindSync מבקשת הרשאה <strong>ליצור יומן משלו ולנהל את האירועים בו</strong>
+                    (<code dir="ltr">calendar.app.created</code>), וגם את כתובת ה-Google שלך, כדי להציג איזה חשבון מחובר.</li>
+                <li>נוצר בחשבון שלך יומן אחד בשם "MindSync", ו-MindSync מוסיפה, משנה ומוחקת בו רק את האירועים שבחרת לסנכרן (שיעורים, מבחנים, זמני לימוד).
+                    <strong>אין לה גישה לשאר היומנים והאירועים שלך</strong>.</li>
+                <li>ההרשאה ש-Google נותנת נשמרת מוצפנת, ומשמשת רק לעדכון היומן הזה כשמבקשים.</li>
+                <li>אפשר לנתק בכל רגע ב-MindSync (הגדרות ← חיבורים ← Google Calendar ← ניתוק), וזה גם מבטל את ההרשאה אצל Google,
+                    או מחשבון Google שלך ב-<a href="https://myaccount.google.com/permissions" rel="noopener" dir="ltr">myaccount.google.com/permissions</a>.
+                    אירועים שכבר נוספו נשארים ביומן "MindSync" עד שמוחקים את היומן ב-Google Calendar.</li>
+            </ul>
+            <p>
+                השימוש של MindSync במידע שמתקבל מ-Google APIs וההעברה שלו עומדים ב-
+                <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener">Google API Services User Data Policy</a>,
+                כולל דרישות ה-Limited Use. מידע מחשבון Google שלך לא משמש לפרסום, לא נמכר, לא משמש לאימון מודלים של AI,
+                ולא מועבר לאף אחד מעבר למה שנדרש כדי לספק את התכונה הזאת.
+            </p>
+        </div>
+
+        <h2>איפה המידע נשמר</h2>
+        <p>
+            המידע נשמר במסד נתונים של MongoDB Atlas והאפליקציה רצה ב-Render (אחסון בענן). החיבור לאפליקציה מוצפן (HTTPS).
+            הספקים האלה שומרים ומעבדים את המידע בשבילנו בלבד.
+        </p>
+
+        <h2>מחיקת המידע שלך</h2>
+        <ul>
+            <li>אפשר למחוק בכל רגע כל קובץ, משימה, אירוע או שאלה באפליקציה.</li>
+            <li>הגדרות ← <em>איפוס כל הנתונים</em> מוחק בבת אחת את כל המשימות, פריטי הלוח, הקבצים והשאלות.</li>
+            <li>הגדרות ← <em>מחיקת החשבון</em> מוחק מיד את החשבון ואת כל המידע שבו (עם אישור בסיסמה), ומנתק גם את Google Calendar.</li>
+        </ul>
+
+        <h2>קטינים</h2>
+        <p>MindSync מיועדת לסטודנטים מגיל 16 ומעלה, ולא מיועד לילדים.</p>
+
+        <h2>שינויים</h2>
+        <p>אם המדיניות תשתנה, הגרסה החדשה תפורסם בעמוד הזה עם תאריך חדש.</p>
+
+        <h2>יצירת קשר</h2>
+        <p>{{CONTACT_HE}}</p>
+        <p>ראו גם את <a href="/terms">תנאי השימוש</a>.</p>
+    </article>
+
+    <!-- ================= English ================= -->
+    <article data-lang="en">
+        <h1>Privacy policy</h1>
+        <p class="muted">Last updated: {{UPDATED}}</p>
+
+        <p>
+            MindSync is a study assistant for students: it keeps your course files, tasks and calendar in one place,
+            writes summaries and practice questions with AI, and can add your study plan to Google Calendar.
+            This page explains what information MindSync keeps, why, and what control you have over it.
+        </p>
+
+        <h2>What we keep</h2>
+        <ul>
+            <li><strong>Your account:</strong> email address, a securely hashed password (never the password itself), your name and degree.</li>
+            <li><strong>What you put in the app:</strong> tasks, calendar events, folders, the files you upload (and the text extracted from them), summaries, practice questions and your review history.</li>
+            <li><strong>Feedback</strong> you send from Settings, with your account id and browser type, so we can reply and fix problems.</li>
+            <li><strong>Usage counters:</strong> how many AI actions you used each day, to apply the daily limit, and on which days you used the app, so we can see whether it's useful enough to come back to. Only the app's owner sees these numbers.</li>
+            <li><strong>Server logs:</strong> technical records of requests (address and time), kept for a short time to find errors. To prevent abuse, the server also counts, in memory only, how many AI requests came from each network address that day.</li>
+        </ul>
+        <p>
+            We do not sell your information, show ads, or use advertising or tracking cookies. The app stores your login session
+            and display preferences in your browser's local storage.
+        </p>
+
+        <h2>Emails we send</h2>
+        <p>
+            MindSync emails you only about your account: a welcome email with a link to confirm your address when you sign up,
+            and a link to choose a new password when you ask for one. No newsletters or marketing. The emails are sent through
+            <a href="https://www.brevo.com/legal/privacypolicy/" rel="noopener">Brevo</a>, which receives your email address, your name
+            and the email's text for that purpose only.
+        </p>
+
+        <h2>How the AI features use your files</h2>
+        <p>
+            When you ask for a summary, practice questions or to read a syllabus, the content of that file is sent to
+            Google's Gemini API to produce the result, which is then saved in your account. It is sent only for the action you asked for.
+            Google processes it under the <a href="https://ai.google.dev/gemini-api/terms" rel="noopener">Gemini API terms</a>.
+            Results are written by AI and can contain mistakes.
+        </p>
+
+        <h2>Google Calendar</h2>
+        <div class="box">
+            <p>Connecting Google Calendar is optional. If you connect it:</p>
+            <ul>
+                <li>MindSync asks for permission to <strong>create its own calendar and manage the events in it</strong>
+                    (<code>calendar.app.created</code>), plus your Google email address to show which account is connected.</li>
+                <li>MindSync creates one calendar called "MindSync" in your account and adds, changes and removes only the events you
+                    choose to sync (classes, exams, study blocks). It <strong>cannot see or change your other calendars or events</strong>.</li>
+                <li>The access token Google gives us is stored encrypted and is used only to update that calendar when you ask.</li>
+                <li>You can disconnect at any time in MindSync (Settings → Connections → Google Calendar → Disconnect), which also cancels the access with Google,
+                    or from your Google Account at <a href="https://myaccount.google.com/permissions" rel="noopener">myaccount.google.com/permissions</a>.
+                    Events already added stay in the "MindSync" calendar until you delete that calendar in Google Calendar.</li>
+            </ul>
+            <p>
+                MindSync's use and transfer of information received from Google APIs adheres to the
+                <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener">Google API Services User Data Policy</a>,
+                including the Limited Use requirements. Information from your Google account is not used for advertising,
+                not sold, not used to train AI models, and not shared with anyone except as needed to provide this feature.
+            </p>
+        </div>
+
+        <h2>Where it is stored</h2>
+        <p>
+            Your data is stored in a MongoDB Atlas database and the app runs on Render (cloud hosting). Connections to the app are encrypted (HTTPS).
+            These providers store and process the data on our behalf only.
+        </p>
+
+        <h2>Deleting your information</h2>
+        <ul>
+            <li>You can delete any file, task, event or question in the app at any time.</li>
+            <li>Settings → <em>Reset all data</em> deletes all your tasks, calendar items, files and questions at once.</li>
+            <li>Settings → <em>Delete account</em> deletes your account and all its data right away (you confirm with your password). It also disconnects Google Calendar.</li>
+        </ul>
+
+        <h2>Children</h2>
+        <p>MindSync is meant for students aged 16 and over and is not directed at children.</p>
+
+        <h2>Changes</h2>
+        <p>If this policy changes, the new version will be posted on this page with a new date.</p>
+
+        <h2>Contact</h2>
+        <p>{{CONTACT_EN}}</p>
+        <p>See also the <a href="/terms">terms of use</a>.</p>
+    </article>
 </main>
 </body>
 </html>

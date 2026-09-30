@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MindSync - Terms of use</title>
+    <meta name="title-he" content="MindSync - תנאי שימוש">
+    <meta name="title-en" content="MindSync - Terms of use">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <meta name="theme-color" content="#2f64d6">
+    <script src="/app/pages.js"></script>
+    <!-- Terms of use (30/9). Short and plain on purpose: a beta, free, run by
+         one student. Not legal advice - worth a look by someone who knows
+         before the app charges money. -->
+    <style>
+        :root { --bg: #f7f8fb; --card: #fff; --text: #1d2433; --muted: #5b6475; --accent: #2f64d6; --line: #e6e8ef; }
+        @media (prefers-color-scheme: dark) { :root { --bg: #11151c; --card: #181d26; --text: #e8ebf2; --muted: #a2aabb; --accent: #7aa2f7; --line: #262c38; } }
+        body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.65; }
+        html:not(.lang-he) [data-lang="he"], html.lang-he [data-lang="en"] { display: none !important; }
+        main { max-width: 760px; margin: 0 auto; padding: 24px 20px 64px; }
+        a { color: var(--accent); }
+        h1 { font-size: 30px; margin: 0 0 4px; }
+        h2 { font-size: 19px; margin: 28px 0 8px; }
+        .muted { color: var(--muted); }
+        ul { padding-inline-start: 22px; }
+        li { margin: 4px 0; }
+        .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+        .langs { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+        .langs button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; padding: 5px 10px; cursor: pointer; }
+        .langs button[aria-pressed="true"] { background: var(--card); color: var(--text); font-weight: 600; }
+    </style>
+</head>
+<body>
+<main>
+    <div class="top">
+        <a href="/"><span data-lang="he">MindSync →</span><span data-lang="en">← MindSync</span></a>
+        <div class="langs" role="group" aria-label="Language / שפה">
+            <button type="button" data-set-lang="he" lang="he">עברית</button>
+            <button type="button" data-set-lang="en" lang="en">English</button>
+        </div>
+    </div>
+
+    <!-- ================= Hebrew ================= -->
+    <article data-lang="he">
+        <h1>תנאי שימוש</h1>
+        <p class="muted">עודכן לאחרונה: {{UPDATED}}</p>
+
+        <p>השימוש ב-MindSync מותנה בתנאים האלה. הם קצרים, ושווה לקרוא אותם.</p>
+
+        <h2>גרסת בטא</h2>
+        <p>
+            MindSync נמצאת בגרסת בטא וניתנת בחינם, "כמו שהוא" (AS IS). יכולות להיות תקלות, השבתות ושינויים בתכונות.
+            כדאי לשמור עותק משלך של כל חומר חשוב - MindSync לא מחליפה את הקבצים המקוריים שלך.
+        </p>
+
+        <h2>ה-AI יכול לטעות</h2>
+        <p>
+            סיכומים, שאלות, תשובות, פתרונות, בדיקות תשובות ותאריכים שנקראים מסילבוס נכתבים על ידי AI ועלולים להיות שגויים או חסרים.
+            האחריות לבדוק אותם מול חומר הקורס ומול הודעות המוסד שלך (למשל מועדי מבחנים) היא שלך.
+            MindSync לא אחראית לציונים, להחמצת מועדים או לכל נזק שנובע מהסתמכות על התוכן הזה.
+        </p>
+
+        <h2>מה מותר להעלות</h2>
+        <ul>
+            <li>רק חומר שמותר לך להשתמש בו ללימוד האישי שלך (למשל מצגות וסיכומים של הקורס שלך).</li>
+            <li>אסור להעלות תוכן בלתי חוקי, פוגעני, או מידע אישי של אחרים בלי רשותם.</li>
+            <li>החומר שהעלית נשאר שלך. MindSync משתמשת בו רק כדי לספק לך את השירות (ראו <a href="/privacy">מדיניות הפרטיות</a>).</li>
+        </ul>
+
+        <h2>שימוש הוגן</h2>
+        <ul>
+            <li>חשבון אחד לאדם. אסור לפתוח חשבונות רבים כדי לעקוף את המכסה היומית של ה-AI.</li>
+            <li>אסור לנסות לפרוץ, להעמיס על השרת, לגשת למידע של משתמשים אחרים או לעקוף מגבלות.</li>
+            <li>אם יש שימוש לרעה, אפשר להגביל או לסגור את החשבון.</li>
+        </ul>
+
+        <h2>החשבון שלך</h2>
+        <p>
+            השמירה על הסיסמה היא באחריותך. אפשר למחוק את החשבון וכל המידע שבו בכל רגע, בהגדרות ← מחיקת החשבון.
+            בתקופת הבטא יכול להיות שחשבונות ניסיון ונתונים יימחקו, ואם זה יקרה נשתדל להודיע מראש.
+        </p>
+
+        <h2>שינויים</h2>
+        <p>התנאים יכולים להשתנות; הגרסה החדשה תפורסם כאן עם תאריך חדש. המשך השימוש אחרי שינוי פירושו הסכמה לתנאים המעודכנים.</p>
+
+        <h2>יצירת קשר</h2>
+        <p>{{CONTACT_HE}}</p>
+    </article>
+
+    <!-- ================= English ================= -->
+    <article data-lang="en">
+        <h1>Terms of use</h1>
+        <p class="muted">Last updated: {{UPDATED}}</p>
+
+        <p>Using MindSync means agreeing to these terms. They're short - worth a read.</p>
+
+        <h2>A beta</h2>
+        <p>
+            MindSync is in beta and is provided free and "as is". There may be bugs, downtime and changes to features.
+            Keep your own copy of anything important - MindSync does not replace your original files.
+        </p>
+
+        <h2>The AI can be wrong</h2>
+        <p>
+            Summaries, questions, answers, solutions, answer checks and dates read from a syllabus are written by AI and can be wrong or incomplete.
+            It is up to you to check them against your course material and your institution's announcements (for example exam dates).
+            MindSync is not responsible for grades, missed dates or any harm from relying on this content.
+        </p>
+
+        <h2>What you may upload</h2>
+        <ul>
+            <li>Only material you're allowed to use for your own studying (for example your course's slides and notes).</li>
+            <li>No illegal or abusive content, and no other people's personal information without their permission.</li>
+            <li>What you upload stays yours. MindSync uses it only to provide the service to you (see the <a href="/privacy">privacy policy</a>).</li>
+        </ul>
+
+        <h2>Fair use</h2>
+        <ul>
+            <li>One account per person. Don't open many accounts to get around the daily AI allowance.</li>
+            <li>Don't try to break in, overload the server, reach other users' data or get around limits.</li>
+            <li>Accounts used for abuse may be limited or closed.</li>
+        </ul>
+
+        <h2>Your account</h2>
+        <p>
+            Keeping your password safe is up to you. You can delete your account and everything in it at any time in Settings → Delete account.
+            During the beta, test accounts and data may be removed; if that happens we'll try to say so in advance.
+        </p>
+
+        <h2>Changes</h2>
+        <p>These terms may change; the new version will be posted here with a new date. Using MindSync after a change means you accept the new terms.</p>
+
+        <h2>Contact</h2>
+        <p>{{CONTACT_EN}}</p>
+    </article>
+</main>
+</body>
+</html>

@@ -61,6 +61,35 @@ def add_shim(html, name):
     return html[:m.start()] + SHIM_TAG + nl + indent + html[m.start():]
 
 
+ICON_HEAD = '''<link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <meta name="theme-color" content="#2f64d6">'''
+WEB_HEAD = ICON_HEAD + '''
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="MindSync">
+    <meta name="description" content="MindSync - study assistant for university students. עוזר למידה לסטודנטים.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="MindSync">
+    <meta property="og:title" content="MindSync - עוזר למידה לסטודנטים">
+    <meta property="og:description" content="שאלות תרגול מהקבצים של הקורס, מוכנות לכל מבחן ולוח שבועי - ולדעת מה באמת ידוע לך. חינם, בגרסת בטא.">
+    <meta property="og:image" content="{{BASE}}/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:url" content="{{BASE}}/app/">
+    <meta name="twitter:card" content="summary_large_image">'''
+
+
+def add_head_tags(html, name, tags):
+    """Web-only <head> tags, right after <meta charset>."""
+    m = re.search(r'<meta charset="[^"]*">', html, flags=re.I)
+    if not m:
+        fail(f'{name}: no <meta charset> found')
+    nl = '\r\n' if '\r\n' in html else '\n'
+    return html[:m.end()] + nl + '    ' + tags.replace('\n', nl) + html[m.end():]
+
+
 def add_header(html):
     return re.sub(r'(<!DOCTYPE html>\s*)', lambda m: m.group(1) + HEADER + '\n', html, count=1, flags=re.I)
 
@@ -89,10 +118,14 @@ def main():
     for src in SRC.iterdir():
         if src.is_file():
             shutil.copyfile(src, OUT / src.name)
+        elif src.is_dir():   # web-src/assets: icons, manifest, preview image (served at the site root)
+            shutil.copytree(src, OUT / src.name)
 
-    # index.html: shim first.
+    # index.html: shim first, then the web page's icons / install / link
+    # preview tags ({{BASE}} is filled in by server.js).
     index = read(OUT / 'index.html')
     index = add_header(add_shim(index, 'index.html'))
+    index = add_head_tags(index, 'index.html', WEB_HEAD)
     write(OUT / 'index.html', index)
 
     # summary.html: shim first + KaTeX from the server.
@@ -107,6 +140,7 @@ def main():
         if 'vendor/katex/katex.min.js' not in summary:
             fail('summary.html: could not add the KaTeX script')
     summary = add_header(add_shim(summary, 'summary.html'))
+    summary = add_head_tags(summary, 'summary.html', ICON_HEAD)
     write(OUT / 'summary.html', summary)
 
     # Every file a page refers to must exist in web/ (a missed file would be a
