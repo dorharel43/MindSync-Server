@@ -205,8 +205,9 @@ function nextPacificMidnight(now = Date.now()) {
     return now + (86400 - secondsIntoDay) * 1000;
 }
 
+// The server runs in UTC (Render); the students are in Israel - their clock.
 function localTimeLabel(ts) {
-    return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: process.env.DISPLAY_TIME_ZONE || 'Asia/Jerusalem' });
 }
 
 // Which quota a 429 hit. Google names it in the error details, e.g.
