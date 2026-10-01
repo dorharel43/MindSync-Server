@@ -389,6 +389,10 @@ Return ONLY JSON: {"labels": ["K", "U", ...]} - one letter per question, in orde
             // Of the questions that aren't practice problems (those are applying, not reciting).
             understanding: items.filter(it => it.mode !== 'practice' && UNDERSTAND.test(it.question)).length,
             // The AI's labels, over the questions that aren't practice problems.
+            // What the writer itself labelled "understand", and how many the
+            // understanding top-up added (0 = it didn't run or added nothing).
+            understandingWriter: items.filter(it => it.mode !== 'practice' && it.kind === 'understand').length,
+            topUpAdded: items.filter(it => it.fromTopUp).length,
             understandingJudged: judged ? items.filter((it, i) => it.mode !== 'practice' && judged[i] === 'U').length : null,
             // Several ideas in one question ("define X, Y and Z", "what is A and how...").
             bundled: items.filter(isBundled).length,
@@ -396,7 +400,7 @@ Return ONLY JSON: {"labels": ["K", "U", ...]} - one letter per question, in orde
             inHebrew: items.filter(it => hebrew(it.question)).length,
             latexLeft: items.filter(it => /\\(frac|sum|int|lambda|sigma|cdot|partial)|\$/.test(`${it.question} ${it.answer}`)).length,
             groundedAvg: items.length ? Math.round(100 * items.reduce((n, it) => n + grounded(it), 0) / items.length) : 0,
-            items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 400), mode: it.mode, bundled: isBundled(it), label: judged ? judged[items.indexOf(it)] : null }))
+            items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 400), mode: it.mode, bundled: isBundled(it), label: judged ? judged[items.indexOf(it)] : null, writer: it.kind || null, topUp: !!it.fromTopUp }))
           };
         } catch (err) {
           generation[key] = { label: sample.label, error: String(err.message || err).slice(0, 300), ms: Date.now() - t0 };
