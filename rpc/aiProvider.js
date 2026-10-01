@@ -704,15 +704,18 @@ async function generateFromPdf(pdfBuffer, prompt, options = {}) {
     if (resolveProvider() !== 'gemini') {
         throw new Error('Reading PDFs directly requires a Gemini API key. Add one in Settings.');
     }
-    if (pdfBuffer && pdfBuffer.numPages > MAX_AI_PDF_PAGES) {
-        const err = new Error(`This PDF has ${pdfBuffer.numPages} pages - too many to read whole (${MAX_AI_PDF_PAGES} at most). Using the text from it instead.`);
+    const pageCount = (Array.isArray(pdfBuffer) ? pdfBuffer : [pdfBuffer]).reduce((n, b) => n + ((b && b.numPages) || 0), 0);
+    if (pageCount > MAX_AI_PDF_PAGES) {
+        const err = new Error(`This PDF has ${pageCount} pages - too many to read whole (${MAX_AI_PDF_PAGES} at most). Using the text from it instead.`);
         err.tooManyPages = true;
         throw err;
     }
 
+    // One PDF, or several in one request (1/10: a course's past exams read
+    // together, to see what repeats between them).
     const parts = [
         { text: prompt },
-        { inlineData: { mimeType: 'application/pdf', data: pdfBuffer.toString('base64') } }
+        ...(Array.isArray(pdfBuffer) ? pdfBuffer : [pdfBuffer]).map(b => ({ inlineData: { mimeType: 'application/pdf', data: b.toString('base64') } }))
     ];
 
     const r = await callResilient({
