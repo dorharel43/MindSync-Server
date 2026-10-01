@@ -7,7 +7,7 @@
 //   GEMINI_API_KEY=... node tools/exam-check.js --set ../mindsync-quality-data \
 //       --measure grading,check,solve,structure [--model gemini-3.8-flash] \
 //       [--repeat 3] [--max-calls 150] [--gap-ms 4000] [--only calc2] \
-//       [--holdout] [--out report.json]
+//       [--holdout] [--out report.json] [--resume report.json] [--variants gold-rubric]
 //
 // Measures (see PLAN.md in the gold set):
 //   grading    A1: student answers with expected point ranges, graded with a
@@ -43,7 +43,13 @@ const MAX_CALLS = Math.max(1, Number(args['max-calls']) || 150);
 const GAP_MS = Math.max(0, Number(args['gap-ms'] === undefined ? 4000 : args['gap-ms']));
 const ONLY = args.only ? String(args.only).split(',') : null;
 const WITH_HOLDOUT = args.holdout === true;
-const OUT = path.resolve(args.out || `exam-check-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`);
+// --resume report.json: carry on from an earlier (stopped) run - what was
+// measured is kept, only the rest is run, and the report is updated in place.
+// That's how a free key (20 calls a day) gets through a whole measure.
+const RESUME = args.resume ? path.resolve(args.resume) : null;
+const PREV = RESUME && fs.existsSync(RESUME) ? (JSON.parse(fs.readFileSync(RESUME, 'utf8')).results || {}) : {};
+const VARIANTS = String(args.variants || 'gold-rubric,app-rubric').split(',').map(s => s.trim()).filter(Boolean);
+const OUT = path.resolve(args.out || RESUME || `exam-check-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`);
 if (!process.env.GEMINI_API_KEY) { console.error('GEMINI_API_KEY is not set.'); process.exit(1); }
 if (!fs.existsSync(path.join(SET, 'gold'))) { console.error(`No gold set at ${SET}`); process.exit(1); }
 
@@ -136,16 +142,20 @@ async function gradeOne(g, qi, pi, part, answer) {
     return { points: Math.max(0, Math.min(part.points, Number(r.points))), feedback: String(r.feedback || '').slice(0, 300) };
 }
 
-async function measureGrading() {
+async function measureGrading(result) {
     const { cases } = readJson(path.join(SET, 'gold/grading/cases.json'));
     const { rubrics } = readJson(path.join(SET, 'gold/grading/rubrics.json'));
     const todo = cases.filter(c => gold[c.exam] && inScope(c.exam));
-    const result = { variants: {} };
-    for (const variant of ['gold-rubric', 'app-rubric']) {
+    result.variants = { ...((PREV.grading || {}).variants || {}) };   // a variant not run now keeps its results
+    for (const variant of VARIANTS) {
         console.log(`\n▶ grading (${variant}) - ${todo.length} answers × ${REPEAT}`);
         const appKeys = new Map();   // exam#q -> solveExamParts output
         const rows = [];
+        result.variants[variant] = { rows };
+        const prev = (((PREV.grading || {}).variants || {})[variant] || {}).rows || [];
         for (const c of todo) {
+            const old = prev.find(r => r.id === c.id && r.median !== null);
+            if (old) { rows.push(old); continue; }
             const g = gold[c.exam];
             const gp = g.questions[c.q].parts[c.p];
             let part;
@@ -179,9 +189,7 @@ async function measureGrading() {
             rows.push({ id: c.id, exam: c.exam, kind: c.kind, expect: c.expectPct, got: ps, median: m, spread: ps.length ? Math.max(...ps) - Math.min(...ps) : null, verdict });
             console.log(`   ${verdict === 'in range' ? '✓' : '✗'} ${c.id.padEnd(28)} ${String(m).padStart(5)}%  [${lo}-${hi}]  runs: ${ps.join(', ')}`);
         }
-        result.variants[variant] = { rows, summary: summariseGrading(rows) };
     }
-    return result;
 }
 function scaleRubric(rubric, points) {
     const sum = rubric.reduce((n, r) => n + (Number(r.points) || 0), 0);
@@ -209,12 +217,15 @@ function summariseGrading(rows) {
 }
 
 // ---- B1: the check stage ------------------------------------------------------
-async function measureCheck() {
+async function measureCheck(out) {
     const { planted } = readJson(path.join(SET, 'gold/planted.json'));
     const exams = Object.keys(gold).filter(id => inScope(id) && gold[id].questions.some(q => q.parts.some(hasKey)));
-    const out = { exams: [] };
+    out.exams = [];
     console.log(`\n▶ check stage - ${exams.length} exams, right key and planted wrong keys`);
+    const prev = ((PREV.check || {}).exams || []).filter(r => r.clean && !r.clean.error && !r.clean.failed && (r.planted === undefined || Array.isArray(r.planted)));
     for (const id of exams) {
+        const old = prev.find(r => r.exam === id);
+        if (old) { out.exams.push(old); continue; }
         const g = gold[id];
         // Parts without a known answer are left out of the exam the checker sees.
         const keep = (q) => q.parts.filter(hasKey);
@@ -257,9 +268,11 @@ async function measureCheck() {
         const caught = Array.isArray(row.planted) ? row.planted.filter(x => x.caught).length : 0;
         console.log(`   ${id.padEnd(22)} parts ${row.parts}  false alarms ${(c.falseAlarms || []).length}${c.failed ? ' (CHECK FAILED)' : ''}  planted caught ${caught}/${mine.length}`);
     }
-    const all = out.exams;
+}
+function summariseCheck(out) {
+    const all = out.exams || [];
     const plantedRows = all.flatMap(r => Array.isArray(r.planted) ? r.planted : []);
-    out.summary = {
+    return {
         exams: all.length,
         parts: all.reduce((n, r) => n + r.parts, 0),
         falseAlarms: all.reduce((n, r) => n + ((r.clean && r.clean.falseAlarms) || []).length, 0),
@@ -268,7 +281,6 @@ async function measureCheck() {
         planted: plantedRows.length, caught: plantedRows.filter(x => x.caught).length,
         choiceFixesRight: plantedRows.filter(x => x.rightFix === true).length, choiceFixesWrong: plantedRows.filter(x => x.rightFix === false).length
     };
-    return out;
 }
 
 // ---- B2: the app solving real questions ----------------------------------------
@@ -284,11 +296,14 @@ Return ONLY JSON: {"items": [{"index": n, "same": true or false, "why": "one sho
     const m = String(raw).match(/\{[\s\S]*\}/);
     return m ? (JSON.parse(m[0]).items || []) : [];
 }
-async function measureSolve() {
+async function measureSolve(out) {
     const exams = Object.keys(gold).filter(id => inScope(id) && gold[id].questions.some(q => q.parts.some(hasKey)));
-    const out = { exams: [] };
+    out.exams = [];
     console.log(`\n▶ solving real questions - ${exams.length} exams`);
+    const prev = ((PREV.solve || {}).exams || []).filter(r => !r.error && r.check && !r.check.failed);
     for (const id of exams) {
+        const old = prev.find(r => r.exam === id);
+        if (old) { out.exams.push(old); continue; }
         const g = gold[id];
         const row = { exam: id, parts: [] };
         try {
@@ -337,10 +352,11 @@ async function measureSolve() {
         const ok = row.parts.filter(p => p.rightAfter === true).length;
         console.log(`   ${id.padEnd(22)} ${row.error ? 'ERROR ' + row.error : `right after check ${ok}/${row.parts.length}`}`);
     }
-    const ps = out.exams.flatMap(r => r.parts);
+}
+function summariseSolve(out) {
+    const ps = (out.exams || []).flatMap(r => r.parts);
     const s = (sel) => { const xs = ps.filter(sel); return { parts: xs.length, rightBefore: xs.filter(p => p.rightBefore === true).length, rightAfter: xs.filter(p => p.rightAfter === true).length, dropped: xs.filter(p => p.dropped).length, fixedByCheck: xs.filter(p => p.rightBefore === false && p.rightAfter === true).length, brokenByCheck: xs.filter(p => p.rightBefore === true && p.rightAfter === false).length }; };
-    out.summary = { all: s(() => true), computations: s(p => !p.proof && p.type !== 'mc' && p.type !== 'tf'), proofs: s(p => p.proof), choice: s(p => p.type === 'mc' || p.type === 'tf') };
-    return out;
+    return { all: s(() => true), computations: s(p => !p.proof && p.type !== 'mc' && p.type !== 'tf'), proofs: s(p => p.proof), choice: s(p => p.type === 'mc' || p.type === 'tf') };
 }
 
 // ---- C: structure (leave one out) ------------------------------------------------
@@ -350,10 +366,13 @@ function grams(t, n = 5) { const w = words(t); const s = new Set(); for (let i =
 function overlap(a, b) { if (!a.size) return 0; let n = 0; for (const x of a) if (b.has(x)) n += 1; return n / a.size; }
 const shapeOf = (q) => q.parts.map(p => p.type + (p.reasonRequired ? '+reason' : '')).sort().join(',');
 
-async function measureStructure() {
-    const out = { courses: [] };
+async function measureStructure(out) {
+    out.courses = [];
     console.log('\n▶ structure (leave one out)');
+    const prev = ((PREV.structure || {}).courses || []).filter(r => !r.error);
     for (const [course, heldId] of Object.entries(HELD)) {
+        const old = prev.find(r => r.course === course);
+        if (old) { out.courses.push(old); continue; }
         if (ONLY && !ONLY.some(o => heldId.startsWith(o))) continue;
         const held = gold[heldId];
         if (!held) continue;
@@ -409,26 +428,35 @@ async function measureStructure() {
         out.courses.push(row);
         console.log(`   ${course.padEnd(8)} ${row.error ? 'ERROR ' + row.error : `questions ${row.generated.questions}/${row.real.questions}  points ${row.match.samePoints}  shapes ${row.match.sameShape}  choose ${row.match.sameChoose}  copies ${row.copies.length}`}`);
     }
-    return out;
 }
 
 // ---- main --------------------------------------------------------------------------
 (async () => {
-    const report = { model: MODEL, ranAt: new Date().toISOString(), measures: MEASURES, repeat: REPEAT, holdout: WITH_HOLDOUT, only: ONLY, results: {} };
-    const save = () => { report.calls = calls; fs.writeFileSync(OUT, JSON.stringify(report, null, 1)); };
+    const before = RESUME && fs.existsSync(RESUME) ? JSON.parse(fs.readFileSync(RESUME, 'utf8')) : null;
+    const report = { model: MODEL, ranAt: new Date().toISOString(), measures: MEASURES, repeat: REPEAT, holdout: WITH_HOLDOUT, only: ONLY, results: { ...PREV }, runs: [...((before && before.runs) || [])] };
+    if (before && before.model && before.model !== MODEL) { console.error(`--resume: that report is for ${before.model}, not ${MODEL}.`); process.exit(1); }
+    // Summaries over everything measured so far (also after a stop half way).
+    const summarise = () => {
+        const r = report.results;
+        if (r.grading && r.grading.variants) for (const v of Object.values(r.grading.variants)) v.summary = summariseGrading(v.rows || []);
+        if (r.check) r.check.summary = summariseCheck(r.check);
+        if (r.solve) r.solve.summary = summariseSolve(r.solve);
+    };
+    const save = () => { summarise(); report.calls = (before && before.calls || 0) + calls; fs.writeFileSync(OUT, JSON.stringify(report, null, 1)); };
     const t0 = Date.now();
     try {
         for (const m of MEASURES) {
             const fn = { grading: measureGrading, check: measureCheck, solve: measureSolve, structure: measureStructure }[m];
             if (!fn) { console.warn(`unknown measure: ${m}`); continue; }
-            report.results[m] = await fn();
-            save();
+            report.results[m] = {};
+            try { await fn(report.results[m]); } finally { save(); }
         }
     } catch (err) {
         report.stopped = err.message;
         console.warn(`\n■ ${err.message}`);
     }
     report.seconds = Math.round((Date.now() - t0) / 1000);
+    report.runs.push({ at: report.ranAt, calls, seconds: report.seconds, stopped: report.stopped || null });
     save();
     console.log(`\n${calls} AI calls, ${report.seconds}s - report: ${OUT}`);
     for (const [m, r] of Object.entries(report.results)) {
