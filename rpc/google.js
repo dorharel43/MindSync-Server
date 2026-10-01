@@ -275,6 +275,7 @@ function toGoogleEvent(evt, now = new Date()) {
     return {
         summary: evt.title || 'MindSync',
         description: 'Created via MindSync',
+        ...(evt.location ? { location: String(evt.location).slice(0, 200) } : {}),
         start: { dateTime: addMinutes(dateIso, time, 0), timeZone: TIMEZONE },
         end: { dateTime: addMinutes(dateIso, time, duration), timeZone: TIMEZONE },
         ...(weekly ? { recurrence: [weeklyRule(evt.until)] } : {})

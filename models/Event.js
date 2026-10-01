@@ -44,6 +44,14 @@ const eventSchema = new mongoose.Schema(
       default: null,
       match: [/^\d{4}-\d{2}-\d{2}$/, 'Until must be YYYY-MM-DD'],
     },
+    // Where it happens (a room, "בניין 7 חדר 101") - from a timetable photo,
+    // shown on the card and copied to Google Calendar's location.
+    location: {
+      type: String,
+      default: '',
+      trim: true,
+      maxlength: [200, 'Location must be at most 200 characters'],
+    },
     time: {
       type: String,
       required: [true, 'Event time is required'],
