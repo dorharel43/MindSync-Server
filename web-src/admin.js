@@ -152,6 +152,8 @@
 
   function renderRuns(out) {
     const pc = (n, of) => of ? `${Math.round((n / of) * 100)}%` : '-';
+    // The AI-labelled count when the check got one, else the word-list count.
+    const uOf = (x) => x.understandingJudged != null ? x.understandingJudged : x.understanding;
     const d = runs[0];
     const s = d.summary;
     const verdictTone = (r) => r.acceptable ? 'yes' : 'bad';
@@ -185,10 +187,10 @@
       </tbody></table></div></details>
       ${g ? `<h3>Writing questions - three kinds of material</h3>
         <div class="tablewrap"><table><thead><tr><th>Material</th><th>Questions</th><th>Understanding</th><th>Bundled</th><th>Practice problems</th><th>LaTeX left</th><th>Grounded</th><th>Time</th></tr></thead><tbody>
-        ${Object.values(g).map(x => x.error ? `<tr><td>${esc(x.label)}</td><td colspan="7" class="bad">Failed: ${esc(x.error)}</td></tr>` : `<tr><td>${esc(x.label)}</td><td class="num ${x.count < 8 ? 'bad' : ''}">${x.count}</td><td class="num ${x.understanding * 2 < x.count - x.practice ? 'bad' : ''}">${pc(x.understanding, x.count - x.practice)}</td><td class="num ${x.bundled > 1 ? 'bad' : ''}">${x.bundled}</td><td class="num">${x.practice}</td><td class="num ${x.latexLeft ? 'bad' : ''}">${x.latexLeft}</td><td class="num">${x.groundedAvg}%</td><td class="num">${(x.ms / 1000).toFixed(0)}s</td></tr>`).join('')}
+        ${Object.values(g).map(x => x.error ? `<tr><td>${esc(x.label)}</td><td colspan="7" class="bad">Failed: ${esc(x.error)}</td></tr>` : `<tr><td>${esc(x.label)}</td><td class="num ${x.count < 8 ? 'bad' : ''}">${x.count}</td><td class="num ${uOf(x) * 2 < x.count - x.practice ? 'bad' : ''}">${pc(uOf(x), x.count - x.practice)}${x.understandingJudged != null ? '' : ' <span class="no">(word list)</span>'}</td><td class="num ${x.bundled > 1 ? 'bad' : ''}">${x.bundled}</td><td class="num">${x.practice}</td><td class="num ${x.latexLeft ? 'bad' : ''}">${x.latexLeft}</td><td class="num">${x.groundedAvg}%</td><td class="num">${(x.ms / 1000).toFixed(0)}s</td></tr>`).join('')}
         </tbody></table></div>
-        <div class="hint">Aim: 8+ questions per lecture, half or more of the non-practice questions "understanding" (why, what if, which method, a mistake to judge), 0-1 bundled, the worked examples as practice problems, 0 LaTeX left (the app shows plain text).</div>
-        ${Object.values(g).filter(x => !x.error).map(x => `<details><summary>${esc(x.label)} - the ${x.count} questions</summary><ol class="qs">${x.items.map(it => `<li dir="auto"><b class="pre">${esc(it.question)}</b>${it.mode === 'practice' ? ' <span class="no">(practice)</span>' : ''}${it.bundled ? ' <span class="bad">(bundled)</span>' : ''}<div class="no pre">${esc(it.answer)}</div></li>`).join('')}</ol></details>`).join('')}` : ''}
+        <div class="hint">Understanding = labelled by a second AI call (recall = "what is X / how is X computed"; understanding = why, what if, which method, a mistake to judge). Aim: 8+ questions per lecture, half or more of the non-practice questions understanding, 0-1 bundled, the worked examples as practice problems, 0 LaTeX left (the app shows plain text).</div>
+        ${Object.values(g).filter(x => !x.error).map(x => `<details><summary>${esc(x.label)} - the ${x.count} questions</summary><ol class="qs">${x.items.map(it => `<li dir="auto"><b class="pre">${esc(it.question)}</b>${it.mode === 'practice' ? ' <span class="no">(practice)</span>' : it.label === 'U' ? ' <span class="yes">(understanding)</span>' : it.label === 'K' ? ' <span class="no">(recall)</span>' : ''}${it.bundled ? ' <span class="bad">(bundled)</span>' : ''}<div class="no pre">${esc(it.answer)}</div></li>`).join('')}</ol></details>`).join('')}` : ''}
       ${compare}`;
   }
 

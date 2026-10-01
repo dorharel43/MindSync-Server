@@ -362,6 +362,24 @@ async function runAiCheck(chosen, withGeneration, job) {
           const raw = await context.run(ctx(), () => generate(makeEvent(), sample.text, { category: sample.course, sourceFile: '' }));
           const items = JSON.parse(raw);
           if (!Array.isArray(items)) throw new Error(items && items.error ? items.error : 'no items');
+          // A second opinion on "understanding" (1/10): the word list counts
+          // "כיצד מחושבת X?" as understanding, but that's recalling a method.
+          // One light AI call labels each question; null if it fails.
+          let judged = null;
+          try {
+            const qs = items.map((it, i) => `${i + 1}. ${String(it.question).replace(/\s+/g, ' ').slice(0, 300)}`).join('\n');
+            const out = await context.run(ctx(), () => require('../rpc/aiProvider').generateText(`Label each study question below with ONE letter:
+K = recall: state a definition, theorem, formula, property or the steps of a method ("what is X", "what does Y state", "how is X computed", "what is the condition for X").
+U = understanding: reason with the material - why something holds or is needed, what changes if something changes, judge a claim (true/false with why), choose between close methods for a case, compare two concepts, interpret a result.
+P = a problem to solve with specific numbers or code.
+
+Questions:
+${qs}
+
+Return ONLY JSON: {"labels": ["K", "U", ...]} - one letter per question, in order.`, { forceJson: true, maxTokens: 2048, thinkingLevel: 'low', timeoutMs: 60000 }));
+            const labels = JSON.parse(String(out).replace(/^[^{]*/, '').replace(/[^}]*$/, '')).labels;
+            if (Array.isArray(labels) && labels.length === items.length) judged = labels.map(l => String(l).trim().toUpperCase()[0]);
+          } catch (e) { judged = null; }
           const lecture = new Set(words(sample.text));
           const grounded = (it) => { const w = words(it.answer); return w.length ? w.filter(x => lecture.has(x)).length / w.length : 0; };
           generation[key] = {
@@ -370,13 +388,15 @@ async function runAiCheck(chosen, withGeneration, job) {
             count: items.length,
             // Of the questions that aren't practice problems (those are applying, not reciting).
             understanding: items.filter(it => it.mode !== 'practice' && UNDERSTAND.test(it.question)).length,
+            // The AI's labels, over the questions that aren't practice problems.
+            understandingJudged: judged ? items.filter((it, i) => it.mode !== 'practice' && judged[i] === 'U').length : null,
             // Several ideas in one question ("define X, Y and Z", "what is A and how...").
             bundled: items.filter(isBundled).length,
             practice: items.filter(it => it.mode === 'practice').length,
             inHebrew: items.filter(it => hebrew(it.question)).length,
             latexLeft: items.filter(it => /\\(frac|sum|int|lambda|sigma|cdot|partial)|\$/.test(`${it.question} ${it.answer}`)).length,
             groundedAvg: items.length ? Math.round(100 * items.reduce((n, it) => n + grounded(it), 0) / items.length) : 0,
-            items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 400), mode: it.mode, bundled: isBundled(it) }))
+            items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 400), mode: it.mode, bundled: isBundled(it), label: judged ? judged[items.indexOf(it)] : null }))
           };
         } catch (err) {
           generation[key] = { label: sample.label, error: String(err.message || err).slice(0, 300), ms: Date.now() - t0 };
