@@ -188,7 +188,7 @@
         ${Object.values(g).map(x => x.error ? `<tr><td>${esc(x.label)}</td><td colspan="7" class="bad">Failed: ${esc(x.error)}</td></tr>` : `<tr><td>${esc(x.label)}</td><td class="num ${x.count < 8 ? 'bad' : ''}">${x.count}</td><td class="num">${pc(x.understanding, x.count)}</td><td class="num ${x.bundled > 1 ? 'bad' : ''}">${x.bundled}</td><td class="num">${x.practice}</td><td class="num ${x.latexLeft ? 'bad' : ''}">${x.latexLeft}</td><td class="num">${x.groundedAvg}%</td><td class="num">${(x.ms / 1000).toFixed(0)}s</td></tr>`).join('')}
         </tbody></table></div>
         <div class="hint">Aim: 8+ questions per lecture, half or more "understanding", 0-1 bundled, the worked examples as practice problems, 0 LaTeX left (the app shows plain text).</div>
-        ${Object.values(g).filter(x => !x.error).map(x => `<details><summary>${esc(x.label)} - the ${x.count} questions</summary><ol class="qs">${x.items.map(it => `<li dir="auto"><b class="pre">${esc(it.question)}</b>${it.mode === 'practice' ? ' <span class="no">(practice)</span>' : ''}<div class="no pre">${esc(it.answer)}</div></li>`).join('')}</ol></details>`).join('')}` : ''}
+        ${Object.values(g).filter(x => !x.error).map(x => `<details><summary>${esc(x.label)} - the ${x.count} questions</summary><ol class="qs">${x.items.map(it => `<li dir="auto"><b class="pre">${esc(it.question)}</b>${it.mode === 'practice' ? ' <span class="no">(practice)</span>' : ''}${it.bundled ? ' <span class="bad">(bundled)</span>' : ''}<div class="no pre">${esc(it.answer)}</div></li>`).join('')}</ol></details>`).join('')}` : ''}
       ${compare}`;
   }
 

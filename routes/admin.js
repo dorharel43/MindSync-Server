@@ -370,7 +370,7 @@ async function runAiCheck(chosen, withGeneration, job) {
             inHebrew: items.filter(it => hebrew(it.question)).length,
             latexLeft: items.filter(it => /\\(frac|sum|int|lambda|sigma|cdot|partial)|\$/.test(`${it.question} ${it.answer}`)).length,
             groundedAvg: items.length ? Math.round(100 * items.reduce((n, it) => n + grounded(it), 0) / items.length) : 0,
-            items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 400), mode: it.mode }))
+            items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 400), mode: it.mode, bundled: BUNDLED.test(it.question) || (String(it.question).match(/\?/g) || []).length > 1 }))
           };
         } catch (err) {
           generation[key] = { label: sample.label, error: String(err.message || err).slice(0, 300), ms: Date.now() - t0 };

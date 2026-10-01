@@ -180,7 +180,8 @@ const HARD_CASES = [
     { id: 'java-write-bug', group: 'java', kind: 'too lenient', q: J7_Q, ref: '', a: 'int sumDigits(int n) {\n  int s = 0;\n  while (n > 0) { s += n / 10; n %= 10; }\n  return s;\n}', expect: 'wrong', mode: 'practice' },
     // C#
     { id: 'cs-struct', group: 'csharp', kind: 'right answer', q: S1_Q, ref: S1_REF, a: '1 5', expect: 'correct' },
-    { id: 'cs-struct-wrong', group: 'csharp', kind: 'wrong answer', q: S1_Q, ref: S1_REF, a: '5 5', expect: 'wrong' },
+    // One of the two printed values (q1.X = 5) is right - "partial", like Java's "true true"
+    { id: 'cs-struct-wrong', group: 'csharp', kind: 'wrong answer', q: S1_Q, ref: S1_REF, a: '5 5', expect: 'wrong', accept: ['partial'] },
     { id: 'cs-linq', group: 'csharp', kind: 'right answer', q: S2_Q, ref: S2_REF, a: '3, כי Where מתבצע רק כשסופרים', expect: 'correct' },
     { id: 'cs-linq-wrong', group: 'csharp', kind: 'wrong answer', q: S2_Q, ref: S2_REF, a: '2', expect: 'wrong' },
     { id: 'cs-async', group: 'csharp', kind: 'right answer', q: S3_Q, ref: S3_REF, a: 'לא. async רק מאפשר await, הוא לא פותח thread חדש בעצמו', expect: 'correct' },
