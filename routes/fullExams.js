@@ -235,7 +235,8 @@ router.patch(
     if (!exam) throw new ApiError(404, 'Exam not found');
     let changed = 0;
     for (const x of (Array.isArray(req.body && req.body.parts) ? req.body.parts : []).slice(0, 400)) {
-      const q = exam.questions[Number(x && x.q)];
+      if (!x || typeof x !== 'object') continue;
+      const q = exam.questions[Number(x.q)];
       const part = q && q.parts[Number(x.p)];
       const check = ['checked', 'corrected', 'doubtful'].includes(x.check) ? x.check : '';
       if (!part || part.check || !check) continue;
@@ -276,7 +277,10 @@ router.post(
       const row = r.toObject ? r.toObject() : { ...r };
       const a = sent.get(`${row.q}:${row.p}`);
       if (row.status !== 'unchecked' || !a || a.status !== 'graded') return row;
-      return { ...row, status: 'graded', points: num(a.points, 0, row.max), feedback: str(a.feedback, 3000) };
+      // The same rule as saving a sitting: a wrong true/false verdict gets 0.
+      const part = exam.questions[row.q] && exam.questions[row.q].parts[row.p];
+      const wrongVerdict = !!part && part.type === 'tf' && !!row.choice && row.choice !== String(part.correct);
+      return { ...row, status: 'graded', points: wrongVerdict ? 0 : num(a.points, 0, row.max), feedback: str(a.feedback, 3000) };
     });
     run.answers = answers;
     Object.assign(run, scoreAnswers(exam, answers));
