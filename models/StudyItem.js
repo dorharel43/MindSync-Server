@@ -34,7 +34,22 @@ const reviewSchema = new mongoose.Schema({
     // One id per answer, made by the app (30/9): the same answer sent twice
     // (retry after a timeout) is saved once.
     clientId: { type: String, maxlength: 40 },
-    secondsSpent: { type: Number, default: 0 }
+    secondsSpent: { type: Number, default: 0 },
+    // Answered a version of the question the student had NOT seen before
+    // (1/10): the first time, or a new version. A right answer to the same
+    // text again may be a remembered answer - readiness doesn't count it as
+    // "known". Missing on older reviews = treated as fresh.
+    fresh: { type: Boolean }
+}, { _id: false });
+
+// The next version of a question (1/10): same idea or method, new numbers /
+// function / situation, written by the AI ahead of the next review so the
+// student never answers the same text twice and can't pass by remembering.
+const variantSchema = new mongoose.Schema({
+    question: { type: String, trim: true, maxlength: 2000 },
+    answer: { type: String, trim: true, maxlength: 4000 },
+    solutionSource: { type: String, enum: ['ai', 'document'], default: 'ai' },
+    createdAt: { type: Date, default: Date.now }
 }, { _id: false });
 
 const studyItemSchema = new mongoose.Schema({
@@ -116,6 +131,18 @@ const studyItemSchema = new mongoose.Schema({
     // the student got the original wrong - so a right answer later shows
     // understanding, not a remembered answer. Points at the original.
     twinOf: { type: mongoose.Schema.Types.ObjectId, default: null },
+
+    // What kind of item the question writer made it (1/10): "know" (what a
+    // term means - shown as is), "understand" or "practice" (a new version
+    // each time). '' on older items: decided when a version is written.
+    kind: { type: String, enum: ['know', 'understand', 'practice', ''], default: '' },
+    // The version to show next time, and the versions already shown - so a
+    // new one is never one the student has seen.
+    nextVariant: { type: variantSchema, default: null },
+    pastVersions: { type: [{ type: String, maxlength: 400 }], default: [] },
+    // The last time a version couldn't be written for it (the AI's answer
+    // failed the checks): not asked again for a few days.
+    variantFailedAt: { type: Date, default: null },
 
     // ---- Scheduling state (SM-2 derived) ----
     // Days until the next review. 0 means "not yet scheduled / new".

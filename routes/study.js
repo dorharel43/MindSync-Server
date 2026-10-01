@@ -147,7 +147,14 @@ function readinessOf(items, exam = null, now = Date.now()) {
     const last = reviews[reviews.length - 1];
     if (!last) { r.unseen += 1; return; }
     const partial = last.outcome === 'partial' || last.outcome === 'stuck';
-    if (last.wasCorrect && (last.confidence === 'sure' || last.confidence === 'think_so')) {
+    // Answering a text you've seen before (1/10: no new version was ready)
+    // may be remembering the answer: it counts as "known" only if the last
+    // answer to a version you hadn't seen was already known.
+    const freshAt = reviews.map(rv => rv.fresh !== false).lastIndexOf(true);
+    const lastFresh = freshAt >= 0 ? reviews[freshAt] : null;
+    const knewFresh = lastFresh && lastFresh.wasCorrect && (lastFresh.confidence === 'sure' || lastFresh.confidence === 'think_so') &&
+      !reviews.slice(freshAt + 1).some(rv => !rv.wasCorrect);   // forgotten since: it has to be shown again
+    if (last.wasCorrect && (last.confidence === 'sure' || last.confidence === 'think_so') && (last.fresh !== false || knewFresh)) {
       if (isFading(item, now)) r.fading += 1; else r.known += 1;
     } else if (last.wasCorrect || partial) r.shaky += 1;
     else {
@@ -649,6 +656,56 @@ router.get(
   })
 );
 
+// GET /api/study/variant-candidates?when=today|tomorrow   (1/10)
+// The questions that need a new version written before they come up: in
+// today's (or tomorrow's) queue, answered at least once, not a "what does X
+// mean" item, and without a version waiting already. The app writes the
+// versions in one or two AI requests and saves them with PUT /:id/variant.
+router.get(
+  '/variant-candidates',
+  asyncHandler(async (req, res) => {
+    const when = req.query.when === 'tomorrow' ? 'tomorrow' : 'today';
+    const items = await StudyItem.find({ userId: req.userId, suspended: false });
+    const courses = [...new Set(items.map(courseOf))];
+    const exams = await examsForCourses(req.userId, courses);
+    const at = new Date(Date.now() + (when === 'tomorrow' ? DAY_MS : 0));
+    const { queue } = buildStudyQueue(items, exams, at, { limit: 24 });
+    const out = queue
+      .filter(i => i.reviews && i.reviews.length && i.kind !== 'know' && !(i.nextVariant && i.nextVariant.question) &&
+        !(i.variantFailedAt && Date.now() - new Date(i.variantFailedAt).getTime() < 3 * DAY_MS))
+      .map(i => ({ id: String(i._id), question: i.question, answer: i.answer, mode: i.mode, skillTag: i.skillTag, category: i.category, kind: i.kind, solutionSource: i.solutionSource, pastVersions: i.pastVersions || [] }));
+    res.json(out);
+  })
+);
+
+// PUT /api/study/:id/variant   { question, answer, solutionSource }   (1/10)
+//   { keep: true }   - the AI says it only asks what a term means: shown as
+//                      it is from now on (kind "know"), never sent again.
+//   { failed: true } - no usable version came back: not asked for 3 days.
+router.put(
+  '/:id/variant',
+  asyncHandler(async (req, res) => {
+    const item = await StudyItem.findOne({ _id: req.params.id, userId: req.userId });
+    if (!item) throw new ApiError(404, 'Study item not found');
+    if (req.body.keep === true || req.body.failed === true) {
+      if (req.body.keep === true) item.kind = 'know';
+      else item.variantFailedAt = new Date();
+      await item.save({ validateModifiedOnly: true });
+      return res.json({ id: String(item._id), kind: item.kind });
+    }
+    const question = String(req.body.question || '').trim();
+    const answer = String(req.body.answer || '').trim();
+    if (question.length < 10 || question.length > 2000 || !answer || answer.length > 4000) throw new ApiError(400, 'A version needs a question (10-2000 characters) and an answer (up to 4000).');
+    if (question === item.question.trim()) throw new ApiError(400, 'That is the same question.');
+    // One waiting at a time: two writers at once (today's and tomorrow's)
+    // must not swap the text a session already has on screen.
+    if (item.nextVariant && item.nextVariant.question) throw new ApiError(409, 'A new version is already waiting.');
+    item.nextVariant = { question, answer, solutionSource: req.body.solutionSource === 'document' ? 'document' : 'ai', createdAt: new Date() };
+    await item.save({ validateModifiedOnly: true });
+    res.json({ id: String(item._id), nextVariant: item.nextVariant });
+  })
+);
+
 // GET /api/study/categories
 router.get(
   '/categories',
@@ -694,7 +751,8 @@ router.post(
         skillTag: fit(i.skillTag, 120),
         category: fit(i.category, 100),
         sourceFile: fit(i.sourceFile, 300),
-        twinOf: typeof i.twinOf === 'string' && /^[a-f0-9]{24}$/i.test(i.twinOf) ? i.twinOf : null
+        twinOf: typeof i.twinOf === 'string' && /^[a-f0-9]{24}$/i.test(i.twinOf) ? i.twinOf : null,
+        kind: ['know', 'understand', 'practice'].includes(i.kind) ? i.kind : ''
       })),
       { ordered: false } // one bad item shouldn't reject the whole batch
     );
@@ -741,7 +799,21 @@ router.delete(
 // One answer recorded and the question rescheduled - for practice and for
 // mock exams alike (30/9). The course's next exam caps how far away the next
 // review can be.
-async function recordReview(userId, item, { confidence, outcome, aiSuggested = null, clientId, secondsSpent = 0 }) {
+async function recordReview(userId, item, { confidence, outcome, aiSuggested = null, clientId, secondsSpent = 0, variantShown = false }) {
+  // A new version was on screen (1/10): it becomes a past version, and the
+  // answer counts as "fresh" - so does the very first answer to a question.
+  const shownVariant = variantShown && item.nextVariant && item.nextVariant.question ? item.nextVariant.question : null;
+  // Also fresh: a "what does this term mean" item (remembering IS the point
+  // there), and the same text after a week or more - a specific answer is
+  // long forgotten by then, and an item that never gets a version (no cloud
+  // AI, mock exams) can still become "known".
+  const prev = item.reviews && item.reviews.length ? item.reviews[item.reviews.length - 1] : null;
+  const fresh = Boolean(shownVariant) || !prev || item.kind === 'know' ||
+    Date.now() - new Date(prev.reviewedAt).getTime() >= 7 * DAY_MS;
+  if (shownVariant) {
+    item.pastVersions = [...(item.pastVersions || []), String(shownVariant).slice(0, 400)].slice(-6);
+    item.nextVariant = null;
+  }
   const course = courseOf(item);
   const exam = (await examsForCourses(userId, [course]))[course] || null;
   const next = schedule(item, outcome, confidence, exam ? { daysUntilExam: exam.daysLeft, examDate: exam.date } : {});
@@ -752,7 +824,8 @@ async function recordReview(userId, item, { confidence, outcome, aiSuggested = n
     aiSuggested,
     clientId: typeof clientId === 'string' ? clientId.slice(0, 40) : undefined,
     secondsSpent: Math.min(Math.max(Number(secondsSpent) || 0, 0), 24 * 3600),
-    reviewedAt: new Date()
+    reviewedAt: new Date(),
+    fresh
   });
   // Keep the recent history only (30/9): answering the same question in a
   // loop used to grow one document without end.
@@ -802,7 +875,7 @@ router.post(
       return res.json({ item, grade: null, nextInterval: item.interval, cappedForExam: null, wasOverconfident: confidence === 'sure' && !OUTCOME_CORRECT[outcome], duplicate: true });
     }
 
-    const { next, exam } = await recordReview(req.userId, item, { confidence, outcome, aiSuggested, clientId: req.body.clientId, secondsSpent });
+    const { next, exam } = await recordReview(req.userId, item, { confidence, outcome, aiSuggested, clientId: req.body.clientId, secondsSpent, variantShown: req.body.variantShown === true });
 
     res.json({
       item,
@@ -823,9 +896,12 @@ router.put(
   '/:id',
   asyncHandler(async (req, res) => {
     const { question, answer, mode, skillTag, category, suspended, mySolution, solutionSource } = req.body;
+    // The student rewrote the question or its answer: a version written from
+    // the old text no longer fits (1/10).
+    const edited = question !== undefined || answer !== undefined || mode !== undefined;
     const item = await StudyItem.findOneAndUpdate(
       { _id: req.params.id, userId: req.userId },
-      { question, answer, mode, skillTag, category, suspended, mySolution, solutionSource },
+      { question, answer, mode, skillTag, category, suspended, mySolution, solutionSource, ...(edited ? { nextVariant: null } : {}) },
       { new: true, runValidators: true, omitUndefined: true }
     );
     if (!item) throw new ApiError(404, 'Study item not found');

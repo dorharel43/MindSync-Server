@@ -152,6 +152,13 @@
 
   function renderRuns(out) {
     const pc = (n, of) => of ? `${Math.round((n / of) * 100)}%` : '-';
+    // New versions of 3 questions (1/10): what the student gets the second time.
+    const versionsBlock = (x) => {
+      const v = x.versions;
+      if (!v) return '';
+      if (v.error) return `<p class="bad">${esc(x.label)} - new versions failed: ${esc(v.error)}</p>`;
+      return `<details><summary>${esc(x.label)} - new versions of ${v.length} questions (shown the second time)</summary><ol class="qs">${v.map(it => `<li dir="auto"><div class="no pre">${esc(it.question)}</div>${it.kept ? '<b>(kept as it is - a "what does X mean" question)</b>' : it.failed ? '<b class="bad">(no usable version)</b>' : `<b class="pre">${esc(it.version)}</b><div class="no pre">${esc(it.answer)}</div>`}</li>`).join('')}</ol></details>`;
+    };
     // The AI-labelled count when the check got one, else the word-list count.
     const uOf = (x) => x.understandingJudged != null ? x.understandingJudged : x.understanding;
     const d = runs[0];
@@ -190,7 +197,7 @@
         ${Object.values(g).map(x => x.error ? `<tr><td>${esc(x.label)}</td><td colspan="8" class="bad">Failed: ${esc(x.error)}</td></tr>` : `<tr><td>${esc(x.label)}</td><td class="num ${x.count < 8 ? 'bad' : ''}">${x.count}</td><td class="num ${uOf(x) * 2 < x.count - x.practice ? 'bad' : ''}">${pc(uOf(x), x.count - x.practice)}${x.understandingJudged != null ? '' : ' <span class="no">(word list)</span>'}<div class="no">the writer said ${pc(x.understandingWriter || 0, x.count - x.practice)}${x.topUpAdded ? ` · +${x.topUpAdded} from top-up` : ' · no top-up'}</div></td><td class="num ${x.bundled > 1 ? 'bad' : ''}">${x.bundled}</td><td class="num">${x.practice}</td><td class="num ${x.latexLeft ? 'bad' : ''}">${x.latexLeft}</td><td class="num ${x.formulaLeft ? 'bad' : ''}">${x.formulaLeft == null ? '-' : x.formulaLeft}</td><td class="num">${x.groundedAvg}%</td><td class="num">${(x.ms / 1000).toFixed(0)}s</td></tr>`).join('')}
         </tbody></table></div>
         <div class="hint">Understanding = labelled by a separate AI call: recall = "what is X / how is X computed"; understanding = why, what if, which method, a mistake to judge, or what code does and why. The question writer now uses the same labelling to decide on its top-up. Aim: 8+ questions per lecture, half or more of the non-practice questions understanding, 0-1 bundled, an exercise for each method (practice problems), 0 "what is the formula" questions (exams give a formula sheet), 0 LaTeX left (the app shows plain text).</div>
-        ${Object.values(g).filter(x => !x.error).map(x => `<details><summary>${esc(x.label)} - the ${x.count} questions</summary><ol class="qs">${x.items.map(it => `<li dir="auto"><b class="pre">${esc(it.question)}</b>${it.mode === 'practice' ? ' <span class="no">(practice)</span>' : it.label === 'U' ? ' <span class="yes">(understanding)</span>' : it.label === 'P' ? ' <span class="yes">(applying)</span>' : it.label === 'K' ? ' <span class="no">(recall)</span>' : it.label === 'F' ? ' <span class="bad">(formula)</span>' : ''}${it.mode !== 'practice' && it.writer && it.label && (it.writer === 'understand') !== (it.label !== 'K' && it.label !== 'F') ? ` <span class="bad">(writer said ${esc(it.writer)})</span>` : ''}${it.topUp ? ' <span class="no">(top-up)</span>' : ''}${it.bundled ? ' <span class="bad">(bundled)</span>' : ''}<div class="no pre">${esc(it.answer)}</div></li>`).join('')}</ol></details>`).join('')}` : ''}
+        ${Object.values(g).filter(x => !x.error).map(x => `<details><summary>${esc(x.label)} - the ${x.count} questions</summary><ol class="qs">${x.items.map(it => `<li dir="auto"><b class="pre">${esc(it.question)}</b>${it.mode === 'practice' ? ' <span class="no">(practice)</span>' : it.label === 'U' ? ' <span class="yes">(understanding)</span>' : it.label === 'P' ? ' <span class="yes">(applying)</span>' : it.label === 'K' ? ' <span class="no">(recall)</span>' : it.label === 'F' ? ' <span class="bad">(formula)</span>' : ''}${it.mode !== 'practice' && it.writer && it.label && (it.writer === 'understand') !== (it.label !== 'K' && it.label !== 'F') ? ` <span class="bad">(writer said ${esc(it.writer)})</span>` : ''}${it.topUp ? ' <span class="no">(top-up)</span>' : ''}${it.bundled ? ' <span class="bad">(bundled)</span>' : ''}<div class="no pre">${esc(it.answer)}</div></li>`).join('')}</ol></details>${versionsBlock(x)}`).join('')}` : ''}
       ${compare}`;
   }
 
