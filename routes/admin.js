@@ -381,6 +381,19 @@ Return ONLY JSON: {"labels": ["K", "U", ...]} - one letter per question, in orde
             const labels = JSON.parse(String(out).replace(/^[^{]*/, '').replace(/[^}]*$/, '')).labels;
             if (Array.isArray(labels) && labels.length === items.length) judged = labels.map(l => String(l).trim().toUpperCase()[0]);
           } catch (e) { judged = null; }
+          // New versions of three of the questions (1/10): what a student
+          // gets the second time - practice problems first, then the
+          // understanding ones. Nothing is saved.
+          let versions = null;
+          try {
+            const preview = handlers.get('preview-variants');
+            const pickFrom = [...items.filter(it => it.mode === 'practice'), ...items.filter((it, i) => it.mode !== 'practice' && (!judged || (judged[i] !== 'K' && judged[i] !== 'F')))];
+            const picked = pickFrom.slice(0, 3);
+            if (preview && picked.length) {
+              const out = await context.run(ctx(), () => preview(makeEvent(), picked));
+              versions = Array.isArray(out) ? out : { error: out && out.error ? String(out.error).slice(0, 200) : 'no answer' };
+            }
+          } catch (e) { versions = { error: String(e.message).slice(0, 200) }; }
           const lecture = new Set(words(sample.text));
           const grounded = (it) => { const w = words(it.answer); return w.length ? w.filter(x => lecture.has(x)).length / w.length : 0; };
           generation[key] = {
@@ -404,6 +417,7 @@ Return ONLY JSON: {"labels": ["K", "U", ...]} - one letter per question, in orde
             inHebrew: items.filter(it => hebrew(it.question)).length,
             latexLeft: items.filter(it => /\\(frac|sum|int|lambda|sigma|cdot|partial)|\$/.test(`${it.question} ${it.answer}`)).length,
             groundedAvg: items.length ? Math.round(100 * items.reduce((n, it) => n + grounded(it), 0) / items.length) : 0,
+            versions,
             items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 400), mode: it.mode, bundled: isBundled(it), label: judged ? judged[items.indexOf(it)] : null, writer: it.writerKind || it.kind || null, topUp: !!it.fromTopUp }))
           };
         } catch (err) {
