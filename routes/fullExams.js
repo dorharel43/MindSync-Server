@@ -308,6 +308,27 @@ router.post(
   })
 );
 
+// POST /api/full-exams/:id/runs/:runId/photo-feedback   - where the working
+// behind a wrong choice went wrong (from a photo). Feedback only: the points
+// don't change, and only a choice question marked wrong takes it.
+router.post(
+  '/:id/runs/:runId/photo-feedback',
+  asyncHandler(async (req, res) => {
+    if (!isId(req.params.id) || !isId(req.params.runId)) throw new ApiError(404, 'Result not found');
+    const exam = await FullExam.findOne({ _id: req.params.id, userId: req.userId }).select('questions').lean();
+    const run = await FullExamRun.findOne({ _id: req.params.runId, examId: req.params.id, userId: req.userId });
+    if (!exam || !run) throw new ApiError(404, 'Result not found');
+    const b = req.body || {};
+    const row = run.answers.find(a => a.q === Number(b.q) && a.p === Number(b.p));
+    const part = row && exam.questions[row.q] && exam.questions[row.q].parts[row.p];
+    const choiceOnly = !!part && (part.type === 'mc' || part.type === 'tf') && !part.reasonRequired;
+    if (!row || !choiceOnly || row.status !== 'graded' || row.points >= row.max) throw new ApiError(400, 'Only a wrong choice takes this feedback.');
+    row.photoFeedback = str(b.feedback, 3000);
+    await run.save();
+    res.json({ ok: true });
+  })
+);
+
 // GET /api/full-exams/:id/runs
 router.get(
   '/:id/runs',

@@ -11,6 +11,8 @@ const answerSchema = new mongoose.Schema({
     // copied from a photo of the student's page (the photo isn't kept); edited = the student changed the copy
     fromPhoto: { type: Boolean, default: false },
     photoEdited: { type: Boolean, default: false },
+    // a choice marked wrong + a photo of the working: where the working went wrong (feedback only)
+    photoFeedback: { type: String, maxlength: 3000, default: '' },
     // graded
     points: { type: Number, min: 0, max: 100, default: 0 },
     max: { type: Number, min: 0, max: 100, default: 0 },
