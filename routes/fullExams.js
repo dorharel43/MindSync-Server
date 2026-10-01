@@ -316,15 +316,19 @@ router.post(
   asyncHandler(async (req, res) => {
     if (!isId(req.params.id) || !isId(req.params.runId)) throw new ApiError(404, 'Result not found');
     const exam = await FullExam.findOne({ _id: req.params.id, userId: req.userId }).select('questions').lean();
-    const run = await FullExamRun.findOne({ _id: req.params.runId, examId: req.params.id, userId: req.userId });
-    if (!exam || !run) throw new ApiError(404, 'Result not found');
+    if (!exam) throw new ApiError(404, 'Result not found');
     const b = req.body || {};
-    const row = run.answers.find(a => a.q === Number(b.q) && a.p === Number(b.p));
-    const part = row && exam.questions[row.q] && exam.questions[row.q].parts[row.p];
-    const choiceOnly = !!part && (part.type === 'mc' || part.type === 'tf') && !part.reasonRequired;
-    if (!row || !choiceOnly || row.status !== 'graded' || row.points >= row.max) throw new ApiError(400, 'Only a wrong choice takes this feedback.');
-    row.photoFeedback = str(b.feedback, 3000);
-    await run.save();
+    // Read, set, save - once more if "check them again" saved the sitting in between.
+    for (let attempt = 0; ; attempt++) {
+      const run = await FullExamRun.findOne({ _id: req.params.runId, examId: req.params.id, userId: req.userId });
+      if (!run) throw new ApiError(404, 'Result not found');
+      const row = run.answers.find(a => a.q === Number(b.q) && a.p === Number(b.p));
+      const part = row && exam.questions[row.q] && exam.questions[row.q].parts[row.p];
+      const choiceOnly = !!part && (part.type === 'mc' || part.type === 'tf') && !part.reasonRequired;
+      if (!row || !choiceOnly || row.status !== 'graded' || row.points >= row.max) throw new ApiError(400, 'Only a wrong choice takes this feedback.');
+      row.photoFeedback = str(b.feedback, 3000);
+      try { await run.save(); break; } catch (err) { if (err && err.name === 'VersionError' && attempt < 2) continue; throw err; }
+    }
     res.json({ ok: true });
   })
 );
