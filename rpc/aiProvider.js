@@ -833,9 +833,14 @@ function guardPromptSize(prompt) {
     if (len > MAX_PROMPT_CHARS) throw new Error('This text is too long for the AI. Try a shorter part of the file.');
 }
 // Heavy = a long answer OR a long prompt (so a big text can't pass as "light").
+// `allowance: 'light'` (set by server-side code only - a channel can't pass
+// options through) marks the second half of a job the student already used a
+// file action on (the understanding top-up), or the daily batch of new
+// question versions: counted as quick checks, not file actions (1/10).
+const lightByOption = (options) => Boolean(options && options.allowance === 'light');
 const generateTextCounted = withAllowance((prompt, options) => { guardPromptSize(prompt); return generateText(prompt, options); },
-    (prompt, options = {}) => ((options.maxTokens || 0) >= 4000 || String(prompt || '').length > 12000 ? 'heavy' : 'light'));
-const generateFromPdfCounted = withAllowance(generateFromPdf, () => 'heavy');
+    (prompt, options = {}) => (lightByOption(options) ? 'light' : (options.maxTokens || 0) >= 4000 || String(prompt || '').length > 12000 ? 'heavy' : 'light'));
+const generateFromPdfCounted = withAllowance(generateFromPdf, (buffer, prompt, options) => (lightByOption(options) ? 'light' : 'heavy'));
 const generateFromImagesCounted = withAllowance(generateFromImages, () => 'heavy');
 
 module.exports = {
