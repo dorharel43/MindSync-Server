@@ -90,7 +90,8 @@ function ruledPoints(part, row, sent) {
   if (reasoned) {
     if (!row.choice) return 0;
     if (!row.text.trim()) return Math.round(row.max * 0.3 * 100) / 100;
-    return num(sent, Math.round(row.max * 0.3 * 100) / 100, row.max);
+    const floor = Math.round(row.max * 0.3 * 100) / 100;
+    return num(sent, floor, row.max, floor);
   }
   return num(sent, 0, row.max);
 }

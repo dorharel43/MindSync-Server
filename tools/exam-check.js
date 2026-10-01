@@ -138,7 +138,9 @@ async function gradeOne(g, qi, pi, part, answer) {
     const out = await run(() => S.gradeExamQuestion({ stem: q.stem || '' }, [{ part, index: pi, answer }]));
     const r = out.find(x => Number(x.index) === pi);
     // A choice with a required reason: the app's bands (the AI only classifies the reason).
-    if (part.type === 'mc' && part.reasonRequired && r && S.reasonedChoicePoints) return { points: S.reasonedChoicePoints(part, r), reason: r.reason || '', feedback: String(r.feedback || '').slice(0, 300) };
+    // (a reply with neither a reason class nor points is a failure, as in the app - not 30%)
+    if (part.type === 'mc' && part.reasonRequired && r && S.reasonedChoicePoints
+        && (Number.isFinite(Number(r.points)) || /^(full|partial|wrong|none)$/i.test(String(r.reason || '').trim()))) return { points: S.reasonedChoicePoints(part, r), reason: r.reason || '', feedback: String(r.feedback || '').slice(0, 300) };
     if (!r || !Number.isFinite(Number(r.points))) throw new Error('no points in the answer');
     return { points: Math.max(0, Math.min(part.points, Number(r.points))), feedback: String(r.feedback || '').slice(0, 300) };
 }
