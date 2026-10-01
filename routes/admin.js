@@ -227,7 +227,7 @@ router.post(
 // writer. Pick a model to compare (one model only - no fallback, so the
 // numbers belong to it). Costs ~35 short AI calls + 1 long one, not counted
 // against anyone's allowance.
-const { GRADE_CASES, SAMPLE_LECTURE } = require('../utils/aiQualityCases');
+const { GRADE_CASES, SAMPLES } = require('../utils/aiQualityCases');
 
 router.get(
   '/ai-models',
@@ -243,6 +243,7 @@ router.get(
   })
 );
 
+const BUNDLED = /(ו(כיצד|איך|מה|מהי|מהו|איזה|איזו|למה|מדוע)\s)|(,[^,?]+ ו[\u05d0-\u05ea])|(\band (how|what|why|which)\b)/i;
 const UNDERSTAND = /(למה|מדוע|מה ההבדל|מה יקרה|מה קורה|כיצד|איך|באיזה מקרה|מתי |מה המשמעות|השוו|הסבר|why|how does|what happens|difference|compare|when would|what does .* mean)/i;
 
 // Runs in the background (review fix 30/9): ~35 AI calls can take longer
@@ -261,7 +262,7 @@ router.post(
     const withGeneration = req.body.generation !== false;
     const ai = require('../rpc/aiProvider');
     const chosen = model || (ai.readConfig().geminiKey ? ai.activeGeminiModel() : null);
-    aiCheckJob = { id: Date.now().toString(36), running: true, done: 0, total: GRADE_CASES.length + (withGeneration ? 1 : 0), startedAt: new Date().toISOString(), result: null, error: null };
+    aiCheckJob = { id: Date.now().toString(36), running: true, done: 0, total: GRADE_CASES.length + (withGeneration ? Object.keys(SAMPLES).length : 0), startedAt: new Date().toISOString(), result: null, error: null };
     const job = aiCheckJob;
     runAiCheck(chosen, withGeneration, job)
       .then(result => { job.result = result; })
@@ -305,7 +306,7 @@ async function runAiCheck(chosen, withGeneration, job) {
         } catch (err) { out = { error: err.message }; }
         const got = out && out.verdict ? out.verdict : null;
         results[i] = {
-          id: c.id, kind: c.kind, expect: c.expect, got, sure: out ? out.sure : null,
+          id: c.id, group: c.group || 'basics', kind: c.kind, expect: c.expect, got, sure: out ? out.sure : null,
           ok: got === c.expect, acceptable: got === c.expect || (c.accept || []).includes(got),
           feedback: out && out.feedback ? out.feedback : '', error: out && out.error ? String(out.error).slice(0, 200) : '',
           ms: Date.now() - t0, answer: c.a, question: c.q
@@ -330,31 +331,52 @@ async function runAiCheck(chosen, withGeneration, job) {
       unsure: answered.filter(r => r.sure === false).length,
       medianMs: answered.length ? answered.map(r => r.ms).sort((a, b) => a - b)[Math.floor(answered.length / 2)] : null
     };
+    // The same per subject (basics / calculus / java / csharp) - an average
+    // can hide that one kind of material is graded badly.
+    summary.groups = {};
+    for (const r of results) {
+      const g = summary.groups[r.group] = summary.groups[r.group] || { cases: 0, answered: 0, exact: 0, acceptable: 0, tooLenient: 0, tooStrict: 0 };
+      g.cases += 1;
+      if (!r.got) continue;
+      g.answered += 1;
+      if (r.ok) g.exact += 1;
+      if (r.acceptable) g.acceptable += 1;
+      else if (rank[r.got] > rank[r.expect]) g.tooLenient += 1;
+      else g.tooStrict += 1;
+    }
 
-    // ---- the question writer
+    // ---- the question writer: one lecture of each kind, side by side
     let generation = null;
     if (withGeneration && generate) {
-      const t0 = Date.now();
-      try {
-        const raw = await context.run(ctx(), () => generate(makeEvent(), SAMPLE_LECTURE, { category: 'מבוא לסטטיסטיקה', sourceFile: '' }));
-        const items = JSON.parse(raw);
-        if (!Array.isArray(items)) throw new Error(items && items.error ? items.error : 'no items');
-        const words = (t) => String(t || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 3);
-        const lecture = new Set(words(SAMPLE_LECTURE));
-        const grounded = (it) => { const w = words(it.answer); return w.length ? w.filter(x => lecture.has(x)).length / w.length : 0; };
-        const hebrew = (t) => /[א-ת]/.test(t);
-        generation = {
-          ms: Date.now() - t0,
-          count: items.length,
-          understanding: items.filter(it => UNDERSTAND.test(it.question)).length,
-          inHebrew: items.filter(it => hebrew(it.question)).length,
-          groundedAvg: items.length ? Math.round(100 * items.reduce((n, it) => n + grounded(it), 0) / items.length) : 0,
-          items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 300), mode: it.mode }))
-        };
-      } catch (err) {
-        generation = { error: String(err.message || err).slice(0, 300), ms: Date.now() - t0 };
-      }
-      job.done += 1;
+      const words = (t) => String(t || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 3);
+      const hebrew = (t) => /[\u05d0-\u05ea]/.test(t);
+      generation = {};
+      await Promise.all(Object.entries(SAMPLES).map(async ([key, sample]) => {
+        const t0 = Date.now();
+        try {
+          const raw = await context.run(ctx(), () => generate(makeEvent(), sample.text, { category: sample.course, sourceFile: '' }));
+          const items = JSON.parse(raw);
+          if (!Array.isArray(items)) throw new Error(items && items.error ? items.error : 'no items');
+          const lecture = new Set(words(sample.text));
+          const grounded = (it) => { const w = words(it.answer); return w.length ? w.filter(x => lecture.has(x)).length / w.length : 0; };
+          generation[key] = {
+            label: sample.label,
+            ms: Date.now() - t0,
+            count: items.length,
+            understanding: items.filter(it => UNDERSTAND.test(it.question)).length,
+            // Several ideas in one question ("define X, Y and Z", "what is A and how...").
+            bundled: items.filter(it => BUNDLED.test(it.question) || (String(it.question).match(/\?/g) || []).length > 1).length,
+            practice: items.filter(it => it.mode === 'practice').length,
+            inHebrew: items.filter(it => hebrew(it.question)).length,
+            latexLeft: items.filter(it => /\\(frac|sum|int|lambda|sigma|cdot|partial)|\$/.test(`${it.question} ${it.answer}`)).length,
+            groundedAvg: items.length ? Math.round(100 * items.reduce((n, it) => n + grounded(it), 0) / items.length) : 0,
+            items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 400), mode: it.mode }))
+          };
+        } catch (err) {
+          generation[key] = { label: sample.label, error: String(err.message || err).slice(0, 300), ms: Date.now() - t0 };
+        }
+        job.done += 1;
+      }));
     }
     return { model: chosen || 'default', ranAt: new Date().toISOString(), seconds: Math.round((Date.now() - started) / 1000), summary, results, generation };
 }
