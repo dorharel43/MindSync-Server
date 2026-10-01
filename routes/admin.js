@@ -243,6 +243,7 @@ router.get(
   })
 );
 
+const BUNDLED = /(ו(כיצד|איך|מה|מהי|מהו|איזה|איזו|למה|מדוע)\s)|(,[^,?]+ ו[\u05d0-\u05ea])|(\band (how|what|why|which)\b)/i;
 const UNDERSTAND = /(למה|מדוע|מה ההבדל|מה יקרה|מה קורה|כיצד|איך|באיזה מקרה|מתי |מה המשמעות|השוו|הסבר|why|how does|what happens|difference|compare|when would|what does .* mean)/i;
 
 // Runs in the background (review fix 30/9): ~35 AI calls can take longer
@@ -347,6 +348,9 @@ async function runAiCheck(chosen, withGeneration, job) {
           ms: Date.now() - t0,
           count: items.length,
           understanding: items.filter(it => UNDERSTAND.test(it.question)).length,
+          // Several ideas in one question ("define X, Y and Z", "what is A and how...").
+          bundled: items.filter(it => BUNDLED.test(it.question) || (String(it.question).match(/\?/g) || []).length > 1).length,
+          practice: items.filter(it => it.mode === 'practice').length,
           inHebrew: items.filter(it => hebrew(it.question)).length,
           groundedAvg: items.length ? Math.round(100 * items.reduce((n, it) => n + grounded(it), 0) / items.length) : 0,
           items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 300), mode: it.mode }))

@@ -183,7 +183,9 @@
       ${g ? (g.error ? `<h3>Writing questions</h3><p class="bad">Failed: ${esc(g.error)}</p>` : `
         <h3>Writing questions (sample lecture on hypothesis testing)</h3>
         <div class="tiles">
-          <div class="tile"><b>${g.count}</b><span>questions written (${(g.ms / 1000).toFixed(0)}s)</span></div>
+          <div class="tile"><b class="${g.count < 10 ? 'bad' : 'yes'}">${g.count}</b><span>questions written (${(g.ms / 1000).toFixed(0)}s) - this lecture has about 12 ideas, aim for 10+</span></div>
+          <div class="tile"><b class="${(g.bundled || 0) > 1 ? 'bad' : 'yes'}">${g.bundled || 0}</b><span>bundle several ideas in one question - aim for 0-1</span></div>
+          <div class="tile"><b>${g.practice || 0}</b><span>practice problems (the lecture has one worked example)</span></div>
           <div class="tile"><b>${pc(g.understanding, g.count)}</b><span>understanding questions (why / difference / what if) - aim for half or more</span></div>
           <div class="tile"><b>${pc(g.inHebrew, g.count)}</b><span>in Hebrew, like the lecture</span></div>
           <div class="tile"><b>${g.groundedAvg}%</b><span>of answer words come from the lecture (grounded)</span></div>
