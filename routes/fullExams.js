@@ -81,6 +81,20 @@ function scoreAnswers(exam, answers) {
   return { score, max, outOf, percent: outOf ? Math.min(100, Math.round((score / outOf) * 100)) : 0 };
 }
 
+// A written answer's points as the app sent them, within the rules that can
+// be checked here: a wrong true/false verdict or a wrong choice gets 0; a
+// right choice with a required reason gets 30%-100% (30% with no reason).
+function ruledPoints(part, row, sent) {
+  const reasoned = part.type === 'mc' && part.reasonRequired;
+  if ((part.type === 'tf' || reasoned) && row.choice && row.choice !== String(part.correct)) return 0;
+  if (reasoned) {
+    if (!row.choice) return 0;
+    if (!row.text.trim()) return Math.round(row.max * 0.3 * 100) / 100;
+    return num(sent, Math.round(row.max * 0.3 * 100) / 100, row.max);
+  }
+  return num(sent, 0, row.max);
+}
+
 // The graded parts as the app sent them, checked against the paper: only
 // parts that exist, once each; out of the part's own points; multiple choice
 // and true/false without a reason marked here; "answer N of M" counts at most
@@ -104,17 +118,18 @@ function checkAnswers(exam, raw) {
       if (row.status === 'not_chosen' && q.choosePartsCount > 0) { row.max = 0; out.push(row); return; }
       if (row.status === 'not_chosen') row.status = 'blank';
       if (q.choosePartsCount > 0 && ++chosen > q.choosePartsCount) { row.status = 'not_chosen'; row.max = 0; out.push(row); return; }
-      const auto = part.type === 'mc' || (part.type === 'tf' && !part.reasonRequired);
+      const auto = (part.type === 'mc' || part.type === 'tf') && !part.reasonRequired;
+      // a choice with a required reason that is wrong, or has no reason, is marked here too
+      const decided = part.type === 'mc' && part.reasonRequired && (row.choice !== String(part.correct) || !row.text.trim());
       // "I don't know": only where the exam gives points for it - marked here.
       row.dontKnow = a.dontKnow === true && exam.dontKnowShare > 0 && !auto && !q.bonus;   // never on a bonus
       if (row.dontKnow) row.status = 'graded';
       else if (!row.choice.trim() && !row.text.trim()) row.status = 'blank';
-      else if (auto) row.status = 'graded';   // marked here, whatever the app said
+      else if (auto || decided) row.status = 'graded';   // marked here, whatever the app said
       if (row.status === 'graded') {
         if (row.dontKnow) row.points = Math.round(row.max * exam.dontKnowShare * 100) / 100;
         else if (auto) row.points = row.choice === String(part.correct) ? row.max : 0;
-        else if (part.type === 'tf' && row.choice && row.choice !== String(part.correct)) row.points = 0;
-        else row.points = num(a.points, 0, row.max);
+        else row.points = ruledPoints(part, row, a.points);
       }
       out.push(row);
     });
@@ -277,10 +292,9 @@ router.post(
       const row = r.toObject ? r.toObject() : { ...r };
       const a = sent.get(`${row.q}:${row.p}`);
       if (row.status !== 'unchecked' || !a || a.status !== 'graded') return row;
-      // The same rule as saving a sitting: a wrong true/false verdict gets 0.
+      // The same rules as saving a sitting.
       const part = exam.questions[row.q] && exam.questions[row.q].parts[row.p];
-      const wrongVerdict = !!part && part.type === 'tf' && !!row.choice && row.choice !== String(part.correct);
-      return { ...row, status: 'graded', points: wrongVerdict ? 0 : num(a.points, 0, row.max), feedback: str(a.feedback, 3000) };
+      return { ...row, status: 'graded', points: part ? ruledPoints(part, { ...row, text: String(row.text || '') }, a.points) : 0, feedback: str(a.feedback, 3000) };
     });
     run.answers = answers;
     Object.assign(run, scoreAnswers(exam, answers));

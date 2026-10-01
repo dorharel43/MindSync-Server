@@ -107,13 +107,12 @@ for (const course of fs.readdirSync(path.join(SET, 'gold'))) {
 const inScope = (id) => (!ONLY || ONLY.some(o => id.startsWith(o))) && (WITH_HOLDOUT || gold[id].role !== 'holdout');
 const hasKey = (p) => p.answerStatus !== 'none' && String(p.answer || '').trim();
 
-// A gold part in the app's shape (normaliseExam's fields). Multiple choice
-// with a required reason doesn't exist in the app yet: it becomes plain mc.
+// A gold part in the app's shape (normaliseExamPart's fields).
 function appPart(p, rubric) {
     return {
         label: p.label, type: p.type, text: p.text, options: p.options || [],
         correct: p.type === 'mc' || p.type === 'tf' ? String(p.correct) : '',
-        reasonRequired: p.type === 'tf' && p.reasonRequired !== false,
+        reasonRequired: p.type === 'tf' ? p.reasonRequired !== false : p.type === 'mc' && p.reasonRequired === true,
         points: p.points, answer: p.answer || '', rubric: rubric || [{ criterion: 'A complete and correct answer', points: p.points }],
         topic: p.topic || '', check: ''
     };
@@ -138,6 +137,8 @@ async function gradeOne(g, qi, pi, part, answer) {
     const q = g.questions[qi];
     const out = await run(() => S.gradeExamQuestion({ stem: q.stem || '' }, [{ part, index: pi, answer }]));
     const r = out.find(x => Number(x.index) === pi);
+    // A choice with a required reason: the app's bands (the AI only classifies the reason).
+    if (part.type === 'mc' && part.reasonRequired && r && S.reasonedChoicePoints) return { points: S.reasonedChoicePoints(part, r), reason: r.reason || '', feedback: String(r.feedback || '').slice(0, 300) };
     if (!r || !Number.isFinite(Number(r.points))) throw new Error('no points in the answer');
     return { points: Math.max(0, Math.min(part.points, Number(r.points))), feedback: String(r.feedback || '').slice(0, 300) };
 }
@@ -423,7 +424,10 @@ async function measureStructure(out) {
                 bonus: row.real.bonus ? row.generated.bonus : (row.generated.bonus ? 'invented' : null),
                 maxGrade: row.real.maxGrade ? row.generated.maxGrade === row.real.maxGrade : (row.generated.maxGrade ? 'invented' : null),
                 dontKnow: row.real.dontKnow ? row.generated.dontKnowShare > 0 : (row.generated.dontKnowShare ? 'invented' : null),
-                reasonOnChoice: goldQs.some(q => q.parts.some(p => p.type === 'mc' && p.reasonRequired)) ? 'lost (the app has no mc + reason)' : null
+                // "circle and explain": kept when the real exam has it, 'invented' when it doesn't
+                reasonOnChoice: goldQs.some(q => q.parts.some(p => p.type === 'mc' && p.reasonRequired))
+                    ? exam.questions.some(q => q.parts.some(p => p.type === 'mc' && p.reasonRequired))
+                    : (exam.questions.some(q => q.parts.some(p => p.type === 'mc' && p.reasonRequired)) ? 'invented' : null)
             };
             row.copies = copies;
             row.check = { failed: st.failed, corrected: st.corrected, dropped: st.dropped };

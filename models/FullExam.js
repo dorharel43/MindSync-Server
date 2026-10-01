@@ -19,7 +19,9 @@ const partSchema = new mongoose.Schema({
     text: { type: String, maxlength: 6000, default: '' },
     options: { type: [{ type: String, maxlength: 1000 }], default: [] },
     correct: { type: String, maxlength: 20, default: '' },        // mc: option index "0".."n"; tf: "true"/"false"
-    reasonRequired: { type: Boolean, default: false },              // tf: no points without a justification
+    // tf: no points without a justification; mc: "circle and explain" - a
+    // wrong choice 0, a right one 30%-100% by the reason
+    reasonRequired: { type: Boolean, default: false },
     points: { type: Number, min: 0, max: 100, default: 0 },
     answer: { type: String, maxlength: 12000, default: '' },        // the full worked solution
     rubric: { type: [rubricSchema], default: [] },
