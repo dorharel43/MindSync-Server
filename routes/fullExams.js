@@ -37,7 +37,7 @@ function cleanExam(b) {
       answer: str(p.answer, 12000),
       rubric: (Array.isArray(p.rubric) ? p.rubric : []).slice(0, 12).map(r => ({ criterion: str(r.criterion, 400), points: num(r.points, 0, 100) })),
       topic: str(p.topic, 120),
-      check: ['checked', 'corrected'].includes(p.check) ? p.check : ''
+      check: ['checked', 'corrected', 'doubtful'].includes(p.check) ? p.check : ''
     }))
   })).filter(q => q.parts.length);
   // The totals are added up here: the regular questions, the bonus on top; a
@@ -56,12 +56,29 @@ function cleanExam(b) {
     instructions: str(b.instructions, 2000),
     totalPoints,
     bonusPoints: Math.min(5000, sum(questions.filter(q => q.bonus))),
-    maxGrade: maxGrade > 0 && maxGrade < totalPoints ? maxGrade : 0,
+    maxGrade: maxGrade > 0 && maxGrade < totalPoints && maxGrade >= totalPoints * 0.75 ? maxGrade : 0,
     dontKnowShare: num(b.dontKnowShare, 0, 0.5),
     questions,
     recurring: (Array.isArray(b.recurring) ? b.recurring : []).slice(0, 20).map(r => ({ topic: str(r.topic, 200), count: num(r.count, 0, 50), of: num(r.of, 0, 50), example: str(r.example, 600) })),
     language: str(b.language, 10)
   };
+}
+
+// A sitting's total: bonus points add to the score, never to what it is out
+// of. A capped top grade ("108 points, at most 100") is what the regular
+// points are out of; parts the AI couldn't check are left out of both, in
+// proportion.
+function scoreAnswers(exam, answers) {
+  const counted = answers.filter(a => a.status === 'graded' || a.status === 'blank');
+  const isBonus = (a) => !!(exam.questions[a.q] && exam.questions[a.q].bonus);
+  const add = (rows, f) => rows.reduce((n, a) => n + f(a), 0);
+  const score = Math.round(add(counted, a => Math.min(a.points, a.max)) * 10) / 10;
+  const regularAll = add(answers.filter(a => !isBonus(a)), a => a.max);
+  const regularCounted = add(counted.filter(a => !isBonus(a)), a => a.max);
+  const max = Math.round(regularCounted * 10) / 10;
+  const base = exam.maxGrade > 0 && exam.maxGrade < regularAll ? exam.maxGrade : regularAll;
+  const outOf = regularAll ? Math.round((base * regularCounted / regularAll) * 10) / 10 : 0;
+  return { score, max, outOf, percent: outOf ? Math.min(100, Math.round((score / outOf) * 100)) : 0 };
 }
 
 // The graded parts as the app sent them, checked against the paper: only
@@ -183,25 +200,13 @@ router.post(
     if (already) return res.json({ ...already, id: String(already._id), duplicate: true });
     const answers = checkAnswers(exam, b.answers);
     // The score is added up here from the parts, not taken from the app.
-    // Bonus points add to the score, never to what it is out of. A capped top
-    // grade ("108 points, at most 100") is what the regular points are out of;
-    // parts the AI couldn't check are left out of both, in proportion.
-    const counted = answers.filter(a => a.status === 'graded' || a.status === 'blank');
-    const isBonus = (a) => !!(exam.questions[a.q] && exam.questions[a.q].bonus);
-    const add = (rows, f) => rows.reduce((n, a) => n + f(a), 0);
-    const score = Math.round(add(counted, a => Math.min(a.points, a.max)) * 10) / 10;
-    const regularAll = add(answers.filter(a => !isBonus(a)), a => a.max);
-    const regularCounted = add(counted.filter(a => !isBonus(a)), a => a.max);
-    const max = Math.round(regularCounted * 10) / 10;
-    const base = exam.maxGrade > 0 && exam.maxGrade < regularAll ? exam.maxGrade : regularAll;
-    const outOf = regularAll ? Math.round((base * regularCounted / regularAll) * 10) / 10 : 0;
     let run;
     try {
       run = await FullExamRun.create({
       userId: req.userId, examId: exam._id, course: exam.course,
       startedAt: b.startedAt ? new Date(b.startedAt) : new Date(), finishedAt: new Date(),
       limitSec: num(b.limitSec, 0, 36000), usedSec: num(b.usedSec, 0, 36000),
-      answers, score, max, outOf, percent: outOf ? Math.min(100, Math.round((score / outOf) * 100)) : 0,
+      answers, ...scoreAnswers(exam, answers),
       weakTopics: (Array.isArray(b.weakTopics) ? b.weakTopics : []).slice(0, 10).map(t => str(t, 120)),
       clientRunId
       });
@@ -217,6 +222,67 @@ router.post(
     const oldRuns = await FullExamRun.find({ userId: req.userId, examId: exam._id }).sort({ finishedAt: -1 }).skip(RUNS_PER_EXAM).select('_id').lean();
     if (oldRuns.length) await FullExamRun.deleteMany({ _id: { $in: oldRuns.map(r => r._id) }, userId: req.userId });
     res.status(201).json({ ...run.toObject(), id: String(run._id) });
+  })
+);
+
+// PATCH /api/full-exams/:id/check   - a late check of a saved exam: only
+// parts still unchecked change, and nothing is deleted.
+router.patch(
+  '/:id/check',
+  asyncHandler(async (req, res) => {
+    if (!isId(req.params.id)) throw new ApiError(404, 'Exam not found');
+    const exam = await FullExam.findOne({ _id: req.params.id, userId: req.userId });
+    if (!exam) throw new ApiError(404, 'Exam not found');
+    let changed = 0;
+    for (const x of (Array.isArray(req.body && req.body.parts) ? req.body.parts : []).slice(0, 400)) {
+      const q = exam.questions[Number(x && x.q)];
+      const part = q && q.parts[Number(x.p)];
+      const check = ['checked', 'corrected', 'doubtful'].includes(x.check) ? x.check : '';
+      if (!part || part.check || !check) continue;
+      if (check === 'corrected') {
+        const answer = str(x.answer, 12000).trim();
+        if (answer) part.answer = answer;
+        const rubric = (Array.isArray(x.rubric) ? x.rubric : []).slice(0, 12)
+          .map(r => ({ criterion: str(r && r.criterion, 400), points: num(r && r.points, 0, 100) })).filter(r => r.criterion && r.points > 0);
+        const sum = rubric.reduce((n, r) => n + r.points, 0);
+        if (sum) part.rubric = rubric.map(r => ({ ...r, points: Math.round((r.points * part.points / sum) * 100) / 100 }));
+        const c = str(x.correct, 20).trim().toLowerCase();
+        if (part.type === 'mc' && /^\d+$/.test(c) && Number(c) < part.options.length) part.correct = c;
+        if (part.type === 'tf' && (c === 'true' || c === 'false')) part.correct = c;
+      }
+      part.check = check;
+      changed += 1;
+    }
+    if (changed) { exam.markModified('questions'); await exam.save(); }
+    res.json({ ...exam.toObject(), id: String(exam._id), changed });
+  })
+);
+
+// POST /api/full-exams/:id/runs/:runId/regrade   - "check again": only the
+// parts the AI couldn't grade before change; the total is added up again here.
+router.post(
+  '/:id/runs/:runId/regrade',
+  asyncHandler(async (req, res) => {
+    if (!isId(req.params.id) || !isId(req.params.runId)) throw new ApiError(404, 'Result not found');
+    const exam = await FullExam.findOne({ _id: req.params.id, userId: req.userId }).select('questions maxGrade dontKnowShare').lean();
+    const run = await FullExamRun.findOne({ _id: req.params.runId, examId: req.params.id, userId: req.userId });
+    if (!exam || !run) throw new ApiError(404, 'Result not found');
+    const sent = new Map();
+    for (const a of (Array.isArray(req.body && req.body.answers) ? req.body.answers : []).slice(0, 2000)) {
+      const key = `${Number(a && a.q)}:${Number(a && a.p)}`;
+      if (!sent.has(key)) sent.set(key, a);
+    }
+    const answers = run.answers.map(r => {
+      const row = r.toObject ? r.toObject() : { ...r };
+      const a = sent.get(`${row.q}:${row.p}`);
+      if (row.status !== 'unchecked' || !a || a.status !== 'graded') return row;
+      return { ...row, status: 'graded', points: num(a.points, 0, row.max), feedback: str(a.feedback, 3000) };
+    });
+    run.answers = answers;
+    Object.assign(run, scoreAnswers(exam, answers));
+    if (Array.isArray(req.body.weakTopics)) run.weakTopics = req.body.weakTopics.slice(0, 10).map(t => str(t, 120));
+    await run.save();
+    res.json({ ...run.toObject(), id: String(run._id) });
   })
 );
 

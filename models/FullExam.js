@@ -25,8 +25,9 @@ const partSchema = new mongoose.Schema({
     rubric: { type: [rubricSchema], default: [] },
     topic: { type: String, maxlength: 120, default: '' },
     // 'checked' = a second, independent solution agreed; 'corrected' = it
-    // disagreed and the solution was replaced; '' = not checked
-    check: { type: String, enum: ['checked', 'corrected', ''], default: '' }
+    // disagreed and the solution was replaced; 'doubtful' = a late check (on a
+    // saved exam) found the question itself wrong or unclear; '' = not checked
+    check: { type: String, enum: ['checked', 'corrected', 'doubtful', ''], default: '' }
 }, { _id: false });
 
 const questionSchema = new mongoose.Schema({
