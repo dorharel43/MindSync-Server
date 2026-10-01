@@ -183,7 +183,7 @@ app.use(express.static(path.join(WEB_DIR, 'assets'), { index: false, maxAge: '1d
 // Public pages with a few values filled in (30/9): {{BASE}} - the site's
 // full address (a link preview needs one), {{UPDATED}}, {{CONTACT_HE}} /
 // {{CONTACT_EN}} (CONTACT_EMAIL on Render).
-const PAGES_UPDATED = '30 September 2026';
+const PAGES_UPDATED = '1.10.2026';   // numbers: the same on the Hebrew and English pages
 function sendPage(res, next, file) {
   fs.readFile(path.join(WEB_DIR, file), 'utf8', (err, html) => {
     if (err) return next();

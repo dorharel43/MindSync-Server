@@ -11,6 +11,7 @@ const { requireAuth } = require('../middleware/auth');
 const ApiError = require('../middleware/ApiError');
 const storage = require('./storage');
 const { extractPdfText } = require('./pdfExtract');
+const { extractDocx, extractPptx } = require('./officeExtract');
 
 const router = express.Router();
 const limits = require('../middleware/rateLimit');
@@ -31,6 +32,9 @@ async function withExtractSlot(fn) {
     }
 }
 const TEXT_TYPES = ['txt', 'md', 'java', 'py', 'js', 'html', 'css', 'json'];
+// PowerPoint / Word (30/9): their text is read here; the original isn't kept
+// (the AI works from the text - slides are mostly text anyway).
+const OFFICE_TYPES = ['pptx', 'docx'];
 
 router.post('/', requireAuth, uploadLimit,
     express.raw({ type: () => true, limit: storage.MAX_FILE_BYTES + 1024 * 1024 }),
@@ -40,7 +44,8 @@ router.post('/', requireAuth, uploadLimit,
             try { name = decodeURIComponent(String(req.headers['x-file-name'] || '')).trim().slice(0, 250); } catch (e) { name = ''; }
             if (!name) throw new ApiError(400, 'Missing file name.');
             const ext = path.extname(name).slice(1).toLowerCase();
-            if (ext !== 'pdf' && !TEXT_TYPES.includes(ext)) throw new ApiError(415, `.${ext} files aren't supported. Supported: pdf, ${TEXT_TYPES.join(', ')}.`);
+            if (ext === 'ppt' || ext === 'doc') throw new ApiError(415, `Old .${ext} files can't be read. Open it and save it as .${ext}x or PDF, then upload that.`);
+            if (ext !== 'pdf' && !OFFICE_TYPES.includes(ext) && !TEXT_TYPES.includes(ext)) throw new ApiError(415, `.${ext} files aren't supported. Supported: pdf, pptx, docx, ${TEXT_TYPES.join(', ')}.`);
             const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
             if (!buffer.length) throw new ApiError(400, 'The file is empty.');
 
@@ -66,6 +71,14 @@ router.post('/', requireAuth, uploadLimit,
                     console.warn('upload: original not stored:', err.message);
                     return res.status(201).json({ fileName: name, fileContent, filePath: '', warning: err.message });
                 }
+            } else if (OFFICE_TYPES.includes(ext)) {
+                try {
+                    fileContent = (ext === 'pptx' ? extractPptx(buffer) : extractDocx(buffer)).slice(0, 1500000);
+                } catch (err) {
+                    console.warn(`upload: ${ext} not readable:`, err.message);
+                    throw new ApiError(415, `This ${ext === 'pptx' ? 'PowerPoint' : 'Word'} file couldn't be read. Open it and save it as PDF, then upload that.`);
+                }
+                if (!fileContent.trim()) throw new ApiError(415, `There's no text in this ${ext === 'pptx' ? 'presentation' : 'document'} (only pictures?). Save it as PDF and upload that - the AI can read pictures in a PDF.`);
             } else {
                 fileContent = buffer.toString('utf-8').slice(0, 1500000);
             }

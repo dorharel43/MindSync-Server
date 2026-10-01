@@ -94,7 +94,7 @@
     }
 
     // ---- files: pick in the browser, upload to the server ----------------
-    const SUPPORTED = ['pdf', 'txt', 'md', 'java', 'py', 'js', 'html', 'css', 'json'];
+    const SUPPORTED = ['pdf', 'pptx', 'docx', 'txt', 'md', 'java', 'py', 'js', 'html', 'css', 'json'];
     const MAX_FILES = 100;
     const picked = new Map(); // 'browser:<n>' -> File
     let pickCounter = 0;
