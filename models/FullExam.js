@@ -71,6 +71,9 @@ const fullExamSchema = new mongoose.Schema({
     maxGrade: { type: Number, min: 0, max: 5000, default: 0 },
     // part of the points for "I don't know" (e.g. 0.25), when the past exams say so
     dontKnowShare: { type: Number, min: 0, max: 0.5, default: 0 },
+    // the writer marked which parts are worked out on paper (part.handwritten);
+    // an older exam: the app guesses from maths in the text
+    handwrittenMarked: { type: Boolean, default: false },
     questions: { type: [questionSchema], default: [] },
     recurring: { type: [recurringSchema], default: [] },             // what repeats in the past exams
     language: { type: String, maxlength: 10, default: '' }

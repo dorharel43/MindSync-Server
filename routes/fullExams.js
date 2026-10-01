@@ -59,6 +59,7 @@ function cleanExam(b) {
     bonusPoints: Math.min(5000, sum(questions.filter(q => q.bonus))),
     maxGrade: maxGrade > 0 && maxGrade < totalPoints && maxGrade >= totalPoints * 0.75 ? maxGrade : 0,
     dontKnowShare: num(b.dontKnowShare, 0, 0.5),
+    handwrittenMarked: b.handwrittenMarked === true,
     questions,
     recurring: (Array.isArray(b.recurring) ? b.recurring : []).slice(0, 20).map(r => ({ topic: str(r.topic, 200), count: num(r.count, 0, 50), of: num(r.of, 0, 50), example: str(r.example, 600) })),
     language: str(b.language, 10)
