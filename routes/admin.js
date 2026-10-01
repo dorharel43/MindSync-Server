@@ -371,7 +371,7 @@ async function runAiCheck(chosen, withGeneration, job) {
             const out = await context.run(ctx(), () => require('../rpc/aiProvider').generateText(`Label each study question below with ONE letter:
 K = recall: state a definition, theorem, formula, property or the steps of a method ("what is X", "what does Y state", "how is X computed", "what is the condition for X").
 U = understanding: reason with the material - why something holds or is needed, what changes if something changes, judge a claim (true/false with why), choose between close methods for a case, compare two concepts, interpret a result.
-P = a problem to solve with specific numbers or code.
+P = a problem to solve with specific numbers or code (including "what does this code print / return, and why").
 
 Questions:
 ${qs}
@@ -391,16 +391,17 @@ Return ONLY JSON: {"labels": ["K", "U", ...]} - one letter per question, in orde
             // The AI's labels, over the questions that aren't practice problems.
             // What the writer itself labelled "understand", and how many the
             // understanding top-up added (0 = it didn't run or added nothing).
-            understandingWriter: items.filter(it => it.mode !== 'practice' && it.kind === 'understand').length,
+            understandingWriter: items.filter(it => it.mode !== 'practice' && (it.writerKind || it.kind) === 'understand').length,
             topUpAdded: items.filter(it => it.fromTopUp).length,
-            understandingJudged: judged ? items.filter((it, i) => it.mode !== 'practice' && judged[i] === 'U').length : null,
+            // U, or P on a question that isn't a practice problem ("what does this code print and why") - more than recall.
+            understandingJudged: judged ? items.filter((it, i) => it.mode !== 'practice' && judged[i] && judged[i] !== 'K').length : null,
             // Several ideas in one question ("define X, Y and Z", "what is A and how...").
             bundled: items.filter(isBundled).length,
             practice: items.filter(it => it.mode === 'practice').length,
             inHebrew: items.filter(it => hebrew(it.question)).length,
             latexLeft: items.filter(it => /\\(frac|sum|int|lambda|sigma|cdot|partial)|\$/.test(`${it.question} ${it.answer}`)).length,
             groundedAvg: items.length ? Math.round(100 * items.reduce((n, it) => n + grounded(it), 0) / items.length) : 0,
-            items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 400), mode: it.mode, bundled: isBundled(it), label: judged ? judged[items.indexOf(it)] : null, writer: it.kind || null, topUp: !!it.fromTopUp }))
+            items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 400), mode: it.mode, bundled: isBundled(it), label: judged ? judged[items.indexOf(it)] : null, writer: it.writerKind || it.kind || null, topUp: !!it.fromTopUp }))
           };
         } catch (err) {
           generation[key] = { label: sample.label, error: String(err.message || err).slice(0, 300), ms: Date.now() - t0 };
