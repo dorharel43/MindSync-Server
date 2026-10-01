@@ -369,7 +369,8 @@ async function runAiCheck(chosen, withGeneration, job) {
           try {
             const qs = items.map((it, i) => `${i + 1}. ${String(it.question).replace(/\s+/g, ' ').slice(0, 300)}`).join('\n');
             const out = await context.run(ctx(), () => require('../rpc/aiProvider').generateText(`Label each study question below with ONE letter:
-K = recall: state a definition, theorem, formula, property or the steps of a method ("what is X", "what does Y state", "how is X computed", "what is the condition for X").
+F = recall a formula: state or write out a formula, or how a quantity is computed, without using it ("what is the formula for X", "how is X computed", "what is the Taylor series formula").
+K = recall: state a definition, theorem, property or condition in words ("what is X", "what does Y state", "what is the condition for X").
 U = understanding: reason with the material - why something holds or is needed, what changes if something changes, judge a claim (true/false with why), choose between close methods for a case, compare two concepts, interpret a result.
 P = a problem to solve with specific numbers or code (including "what does this code print / return, and why").
 
@@ -394,7 +395,9 @@ Return ONLY JSON: {"labels": ["K", "U", ...]} - one letter per question, in orde
             understandingWriter: items.filter(it => it.mode !== 'practice' && (it.writerKind || it.kind) === 'understand').length,
             topUpAdded: items.filter(it => it.fromTopUp).length,
             // U, or P on a question that isn't a practice problem ("what does this code print and why") - more than recall.
-            understandingJudged: judged ? items.filter((it, i) => it.mode !== 'practice' && judged[i] && judged[i] !== 'K').length : null,
+            understandingJudged: judged ? items.filter((it, i) => it.mode !== 'practice' && judged[i] && judged[i] !== 'K' && judged[i] !== 'F').length : null,
+            // "What is the formula for X?" left after the writer's own filter (aim 0 - exams give a formula sheet).
+            formulaLeft: judged ? items.filter((it, i) => it.mode !== 'practice' && judged[i] === 'F').length : null,
             // Several ideas in one question ("define X, Y and Z", "what is A and how...").
             bundled: items.filter(isBundled).length,
             practice: items.filter(it => it.mode === 'practice').length,
