@@ -244,7 +244,12 @@ router.get(
 );
 
 const BUNDLED = /(ו(כיצד|איך|מה|מהי|מהו|איזה|איזו|למה|מדוע)\s)|(,[^,?]+ ו[\u05d0-\u05ea])|(\band (how|what|why|which)\b)/i;
-const UNDERSTAND = /(למה|מדוע|מה ההבדל|מה יקרה|מה קורה|כיצד|איך|באיזה מקרה|מתי |מה המשמעות|השוו|הסבר|why|how does|what happens|difference|compare|when would|what does .* mean)/i;
+// "Is a p-value the chance H0 is true? Explain." and "If we lower α..." are
+// understanding questions too (2/10: the live check counted them as recall).
+const UNDERSTAND = /(למה|מדוע|מה ההבדל|מה יקרה|מה קורה|כיצד|איך|באיזה מקרה|מתי |מה המשמעות|השוו|הסבר|האם |^אם |why|how does|what happens|difference|compare|when would|when do|what does .* mean|^is |^does |^would |^if |explain|true or false)/i;
+// A practice exercise keeps its own parts ("find the gradient and the
+// directional derivative") - one problem, not a bundle.
+const isBundled = (it) => it.mode !== 'practice' && (BUNDLED.test(it.question) || (String(it.question).match(/\?/g) || []).length > 1);
 
 // Runs in the background (review fix 30/9): ~35 AI calls can take longer
 // than a hosting proxy lets one request live. POST starts it, GET polls it.
@@ -363,14 +368,15 @@ async function runAiCheck(chosen, withGeneration, job) {
             label: sample.label,
             ms: Date.now() - t0,
             count: items.length,
-            understanding: items.filter(it => UNDERSTAND.test(it.question)).length,
+            // Of the questions that aren't practice problems (those are applying, not reciting).
+            understanding: items.filter(it => it.mode !== 'practice' && UNDERSTAND.test(it.question)).length,
             // Several ideas in one question ("define X, Y and Z", "what is A and how...").
-            bundled: items.filter(it => BUNDLED.test(it.question) || (String(it.question).match(/\?/g) || []).length > 1).length,
+            bundled: items.filter(isBundled).length,
             practice: items.filter(it => it.mode === 'practice').length,
             inHebrew: items.filter(it => hebrew(it.question)).length,
             latexLeft: items.filter(it => /\\(frac|sum|int|lambda|sigma|cdot|partial)|\$/.test(`${it.question} ${it.answer}`)).length,
             groundedAvg: items.length ? Math.round(100 * items.reduce((n, it) => n + grounded(it), 0) / items.length) : 0,
-            items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 400), mode: it.mode, bundled: BUNDLED.test(it.question) || (String(it.question).match(/\?/g) || []).length > 1 }))
+            items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 400), mode: it.mode, bundled: isBundled(it) }))
           };
         } catch (err) {
           generation[key] = { label: sample.label, error: String(err.message || err).slice(0, 300), ms: Date.now() - t0 };
