@@ -161,7 +161,8 @@ const HARD_CASES = [
     { id: 'calc-limit-wrong', group: 'calculus', kind: 'wrong answer', q: L_Q, ref: L_REF, a: 'הגבול לא קיים, כי בכיוונים שונים מתקבלים ערכים שונים', expect: 'wrong', mode: 'practice' },
     // Java
     { id: 'java-eq', group: 'java', kind: 'right answer', q: J1_Q, ref: J1_REF, a: 'false\ntrue', expect: 'correct' },
-    { id: 'java-eq-wrong', group: 'java', kind: 'wrong answer', q: J1_Q, ref: J1_REF, a: 'true true', expect: 'wrong' },
+    // One of the two printed lines is right (true for equals) - "partial" is fair
+    { id: 'java-eq-wrong', group: 'java', kind: 'wrong answer', q: J1_Q, ref: J1_REF, a: 'true true', expect: 'wrong', accept: ['partial'] },
     { id: 'java-int-div', group: 'java', kind: 'right answer', q: J2_Q, ref: J2_REF, a: '3 3.0', expect: 'correct' },
     { id: 'java-int-div-wrong', group: 'java', kind: 'wrong answer', q: J2_Q, ref: J2_REF, a: '3 3.5', expect: 'wrong', accept: ['partial'] },
     { id: 'java-loops', group: 'java', kind: 'right answer', q: J3_Q, ref: J3_REF, a: 'n·log₂n', expect: 'correct' },
