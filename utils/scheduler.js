@@ -15,6 +15,8 @@
 //    daysUntilExam, the next review is never later than the day before the
 //    exam (see utils/examSchedule.js for how the exam is found).
 
+const { todayIso } = require('./examSchedule');
+
 const OUTCOME_CORRECT = {
     got_it: true, partial: false, missed: false,
     solved: true, stuck: false, wrong: false
@@ -61,15 +63,21 @@ function schedule(item, outcome, confidence, options = {}) {
     } else {
         repetitions += 1;
 
+        const previous = interval;
         if (repetitions === 1) {
             interval = 1;
         } else if (repetitions === 2) {
-            interval = isPractice ? 3 : 6;
+            // Practice (procedural skills) comes back sooner than a fact.
+            interval = isPractice ? 2 : 6;
         } else {
-            interval = Math.round(interval * ease);
+            // Practice used to take x0.7 here on every review - on top of an
+            // interval already reduced the same way, so it compounded: a hard
+            // exercise solved eight times in a row stayed at 2 days forever.
+            // The previous interval already carries that caution.
+            interval = Math.round(previous * (isPractice ? Math.max(1.3, ease * 0.8) : ease));
         }
-
-        if (isPractice) interval = Math.max(1, Math.round(interval * 0.7));
+        // A success never brings a question back sooner than last time.
+        if (repetitions > 1) interval = Math.max(interval, previous + 1);
     }
 
     if (!luckyGuess) ease = ease + (0.1 - (5 - grade) * (0.08 + (5 - grade) * 0.02));
@@ -100,8 +108,11 @@ function schedule(item, outcome, confidence, options = {}) {
     } else if (interval === 0) {
         dueDate.setMinutes(dueDate.getMinutes() + 10);  // same-session retry
     } else {
-        dueDate.setDate(dueDate.getDate() + interval);
-        dueDate.setHours(4, 0, 0, 0);
+        // N calendar days from TODAY IN ISRAEL, at 07:00 there. It was the
+        // server's (UTC) date: a review at 00:30 Israel time is still
+        // "yesterday" in UTC, so "tomorrow" came back the same morning.
+        const [y, m, d] = todayIso(options.now || new Date()).split('-').map(Number);
+        dueDate = new Date(Date.UTC(y, m - 1, d + interval, 4, 0, 0));
     }
 
     return { interval, ease, repetitions, lapses, dueDate, grade, cappedForExam };

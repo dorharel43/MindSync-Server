@@ -521,9 +521,9 @@ function toOpenRouterContent(parts) {
     });
 }
 
-async function callOpenRouter({ parts, maxTokens = 2048, forceJson = false, system = null, thinkingLevel = 'low', timeoutMs = GEMINI_TIMEOUT_MS }) {
+async function callOpenRouter({ parts, maxTokens = 2048, forceJson = false, system = null, thinkingLevel = 'low', timeoutMs = GEMINI_TIMEOUT_MS, models: onlyModels = null }) {
     const apiKey = process.env.OPENROUTER_API_KEY;
-    const models = openRouterModels();
+    const models = Array.isArray(onlyModels) && onlyModels.length ? onlyModels : openRouterModels();
     const messages = [];
     if (system) messages.push({ role: 'system', content: system });
     messages.push({ role: 'user', content: toOpenRouterContent(parts) });
@@ -588,6 +588,20 @@ async function callOpenRouter({ parts, maxTokens = 2048, forceJson = false, syst
 async function callResilient(opts) {
     const cfg = readConfig();
     const haveOpenRouter = !!process.env.OPENROUTER_API_KEY;
+    // One named model and nothing else (30/9) - the owner's AI quality check
+    // compares models, so a quiet fallback would measure the wrong one.
+    // "openrouter:<id>" or a Gemini model id. Only set by routes/admin.js.
+    const ctx = require('./context').currentContext();
+    const only = ctx && ctx.modelOverride;
+    if (only) {
+        if (only.startsWith('openrouter:')) {
+            if (!haveOpenRouter) throw new Error('OPENROUTER_API_KEY is not set on the server.');
+            return callOpenRouter({ ...opts, models: [only.slice('openrouter:'.length)] });
+        }
+        if (!cfg.geminiKey) throw new Error('No Gemini key is configured on the server.');
+        const text = await callGeminiWithRetry({ ...opts, apiKey: cfg.geminiKey, model: only }, [2000]);
+        return { text, model: only };
+    }
     if (!cfg.geminiKey) {
         if (haveOpenRouter) return callOpenRouter(opts);
         throw new Error('No AI key is configured on the server.');
@@ -837,5 +851,6 @@ module.exports = {
     activeGeminiModel: () => activeGeminiModel(readConfig()),
     modelLabel,
     DEFAULT_GEMINI_MODEL,
-    FALLBACK_GEMINI_MODEL
+    FALLBACK_GEMINI_MODEL,
+    openRouterModels
 };

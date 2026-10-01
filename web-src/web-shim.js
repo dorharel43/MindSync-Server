@@ -94,7 +94,7 @@
     }
 
     // ---- files: pick in the browser, upload to the server ----------------
-    const SUPPORTED = ['pdf', 'txt', 'md', 'java', 'py', 'js', 'html', 'css', 'json'];
+    const SUPPORTED = ['pdf', 'pptx', 'docx', 'txt', 'md', 'java', 'py', 'js', 'html', 'css', 'json'];
     const MAX_FILES = 100;
     const picked = new Map(); // 'browser:<n>' -> File
     let pickCounter = 0;
@@ -156,8 +156,9 @@
             try {
                 const user = await api('GET', '/auth/me', undefined, { reloadOn401: false });
                 return { loggedIn: true, user };
-            } catch {
-                return { loggedIn: false };
+            } catch (err) {
+                // offline: the server couldn't be asked - not "logged out" (30/9)
+                return /can't reach/i.test(String((err && err.message) || '')) ? { loggedIn: false, offline: true } : { loggedIn: false };
             }
         },
         'auth-login': async ({ email, password }) => {

@@ -29,7 +29,8 @@ function errorHandler(err, req, res, next) {
   if (err.code === 11000) {
     statusCode = 409;
     const field = Object.keys(err.keyValue || {})[0];
-    message = field ? `"${err.keyValue[field]}" already exists for ${field}` : 'Duplicate value';
+    // Said plainly (30/9): "X already exists for name" read like an error code.
+    message = field === 'name' ? `"${err.keyValue[field]}" already exists - choose another name.` : 'That already exists.';
   }
 
   if (err.type === 'entity.parse.failed') {

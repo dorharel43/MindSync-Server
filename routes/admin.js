@@ -24,6 +24,7 @@ router.post(
       Folder.deleteMany({ userId: req.userId }),
       FileItem.deleteMany({ userId: req.userId }),
       StudyItem.deleteMany({ userId: req.userId }),
+      require('../models/ExamRun').deleteMany({ userId: req.userId }),
       // The uploaded originals too (30/9).
       require('../rpc/storage').removeAllForUser(req.userId).catch(() => {}),
     ]);
@@ -216,5 +217,146 @@ router.post(
     res.json({ deleted, skipped: skipped.length, failed: failed.length, notFound: ids.length - found.length });
   })
 );
+
+// ==========================================
+// AI quality check (30/9) - owner only
+// ==========================================
+// "Is our model good enough?" answered with numbers, on the real server with
+// the real key: answers whose right verdict is known go through the SAME
+// check students get, and a short lecture goes through the SAME question
+// writer. Pick a model to compare (one model only - no fallback, so the
+// numbers belong to it). Costs ~35 short AI calls + 1 long one, not counted
+// against anyone's allowance.
+const { GRADE_CASES, SAMPLE_LECTURE } = require('../utils/aiQualityCases');
+
+router.get(
+  '/ai-models',
+  requireOwner,
+  asyncHandler(async (req, res) => {
+    const ai = require('../rpc/aiProvider');
+    const cfg = ai.readConfig();
+    res.json({
+      current: cfg.geminiKey ? ai.activeGeminiModel() : null,
+      gemini: cfg.geminiKey ? [...new Set([ai.activeGeminiModel(), ai.DEFAULT_GEMINI_MODEL, ai.FALLBACK_GEMINI_MODEL, 'gemini-3.1-pro-preview'])] : [],
+      openrouter: process.env.OPENROUTER_API_KEY ? ai.openRouterModels().map(m => `openrouter:${m}`) : []
+    });
+  })
+);
+
+const UNDERSTAND = /(למה|מדוע|מה ההבדל|מה יקרה|מה קורה|כיצד|איך|באיזה מקרה|מתי |מה המשמעות|השוו|הסבר|why|how does|what happens|difference|compare|when would|what does .* mean)/i;
+
+// Runs in the background (review fix 30/9): ~35 AI calls can take longer
+// than a hosting proxy lets one request live. POST starts it, GET polls it.
+let aiCheckJob = null;   // { id, running, done, total, startedAt, result, error }
+
+router.post(
+  '/ai-check',
+  requireOwner,
+  asyncHandler(async (req, res) => {
+    if (aiCheckJob && aiCheckJob.running) return res.status(409).json({ error: { message: 'A check is already running - wait for it.', status: 409 } });
+    const m = typeof req.body.model === 'string' ? req.body.model.trim() : '';
+    // A Gemini id ("gemini-3.8-flash") or "openrouter:<vendor>/<model>" - nothing else reaches a URL.
+    const model = m && !m.includes('..') && /^(openrouter:[\w.-]+\/[\w.:-]+|[\w.-]{3,80})$/.test(m) ? m : null;
+    if (m && !model) return res.status(400).json({ error: { message: 'That model name is not valid.', status: 400 } });
+    const withGeneration = req.body.generation !== false;
+    const ai = require('../rpc/aiProvider');
+    const chosen = model || (ai.readConfig().geminiKey ? ai.activeGeminiModel() : null);
+    aiCheckJob = { id: Date.now().toString(36), running: true, done: 0, total: GRADE_CASES.length + (withGeneration ? 1 : 0), startedAt: new Date().toISOString(), result: null, error: null };
+    const job = aiCheckJob;
+    runAiCheck(chosen, withGeneration, job)
+      .then(result => { job.result = result; })
+      .catch(err => { job.error = String(err.message || err).slice(0, 300); console.error('AI check failed:', err.message); })
+      .finally(() => { job.running = false; });
+    res.status(202).json({ id: job.id, running: true, total: job.total });
+  })
+);
+
+router.get(
+  '/ai-check',
+  requireOwner,
+  asyncHandler(async (req, res) => {
+    res.json(aiCheckJob || { running: false, result: null });
+  })
+);
+
+async function runAiCheck(chosen, withGeneration, job) {
+    const context = require('../rpc/context');
+    const { handlers, makeEvent } = require('../rpc/electronShim');
+    require('../rpc/handlers');
+    const grade = handlers.get('grade-study-answer');
+    const generate = handlers.get('generate-study-items');
+    // No userId: nothing is counted against an allowance; one model only.
+    const ctx = () => ({ token: '', userId: null, ip: null, events: new Set(), modelOverride: chosen });
+    const started = Date.now();
+
+    // ---- the check, 4 at a time
+    const results = new Array(GRADE_CASES.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < GRADE_CASES.length) {
+        const i = next++;
+        const c = GRADE_CASES[i];
+        const t0 = Date.now();
+        let out;
+        try {
+          out = await context.run(ctx(), () => grade(makeEvent(), {
+            question: c.q, expected: c.ref, userAnswer: c.a, mode: c.mode || 'recall', solutionSource: c.refByAi ? 'ai' : 'document'
+          }));
+        } catch (err) { out = { error: err.message }; }
+        const got = out && out.verdict ? out.verdict : null;
+        results[i] = {
+          id: c.id, kind: c.kind, expect: c.expect, got, sure: out ? out.sure : null,
+          ok: got === c.expect, acceptable: got === c.expect || (c.accept || []).includes(got),
+          feedback: out && out.feedback ? out.feedback : '', error: out && out.error ? String(out.error).slice(0, 200) : '',
+          ms: Date.now() - t0, answer: c.a, question: c.q
+        };
+        job.done += 1;
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+
+    const answered = results.filter(r => r.got);
+    const rank = { wrong: 0, partial: 1, correct: 2 };
+    const summary = {
+      cases: results.length,
+      answered: answered.length,
+      failed: results.length - answered.length,
+      exact: answered.filter(r => r.ok).length,
+      acceptable: answered.filter(r => r.acceptable).length,
+      // The two ways to be wrong, which matter differently:
+      tooLenient: answered.filter(r => !r.acceptable && rank[r.got] > rank[r.expect]).length,   // passes what it shouldn't -> readiness looks better than it is
+      tooStrict: answered.filter(r => !r.acceptable && rank[r.got] < rank[r.expect]).length,    // fails a right answer -> students stop trusting it
+      fooled: results.filter(r => r.kind === 'fooled by the answer' && r.got === 'correct').length,
+      unsure: answered.filter(r => r.sure === false).length,
+      medianMs: answered.length ? answered.map(r => r.ms).sort((a, b) => a - b)[Math.floor(answered.length / 2)] : null
+    };
+
+    // ---- the question writer
+    let generation = null;
+    if (withGeneration && generate) {
+      const t0 = Date.now();
+      try {
+        const raw = await context.run(ctx(), () => generate(makeEvent(), SAMPLE_LECTURE, { category: 'מבוא לסטטיסטיקה', sourceFile: '' }));
+        const items = JSON.parse(raw);
+        if (!Array.isArray(items)) throw new Error(items && items.error ? items.error : 'no items');
+        const words = (t) => String(t || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 3);
+        const lecture = new Set(words(SAMPLE_LECTURE));
+        const grounded = (it) => { const w = words(it.answer); return w.length ? w.filter(x => lecture.has(x)).length / w.length : 0; };
+        const hebrew = (t) => /[א-ת]/.test(t);
+        generation = {
+          ms: Date.now() - t0,
+          count: items.length,
+          understanding: items.filter(it => UNDERSTAND.test(it.question)).length,
+          inHebrew: items.filter(it => hebrew(it.question)).length,
+          groundedAvg: items.length ? Math.round(100 * items.reduce((n, it) => n + grounded(it), 0) / items.length) : 0,
+          items: items.slice(0, 40).map(it => ({ question: it.question, answer: String(it.answer || '').slice(0, 300), mode: it.mode }))
+        };
+      } catch (err) {
+        generation = { error: String(err.message || err).slice(0, 300), ms: Date.now() - t0 };
+      }
+      job.done += 1;
+    }
+    return { model: chosen || 'default', ranAt: new Date().toISOString(), seconds: Math.round((Date.now() - started) / 1000), summary, results, generation };
+}
 
 module.exports = router;

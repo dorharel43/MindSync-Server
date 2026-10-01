@@ -54,7 +54,7 @@
         <h2>מה נשמר</h2>
         <ul>
             <li><strong>החשבון שלך:</strong> כתובת מייל, הסיסמה בצורה מוצפנת חד-כיוונית (אף פעם לא הסיסמה עצמה), השם ותחום הלימודים.</li>
-            <li><strong>מה שמכניסים לאפליקציה:</strong> משימות, אירועים בלוח, תיקיות, הקבצים שמעלים (והטקסט שחולץ מהם), סיכומים, שאלות תרגול והיסטוריית התרגול.</li>
+            <li><strong>מה שמכניסים לאפליקציה:</strong> משימות, אירועים בלוח, תיקיות, הקבצים שמעלים (והטקסט שחולץ מהם), סיכומים, שאלות תרגול, התשובות שכותבים, היסטוריית התרגול ותוצאות מבחני דמה.</li>
             <li><strong>משוב</strong> שנשלח מההגדרות, יחד עם מזהה החשבון וסוג הדפדפן, כדי שנוכל לענות ולתקן.</li>
             <li><strong>מונים של שימוש:</strong> כמה פעולות AI נוצלו בכל יום (בשביל המכסה היומית), ובאילו ימים נעשה שימוש באפליקציה - כדי לדעת אם היא מועילה. רק בעל האפליקציה רואה את המספרים האלה.</li>
             <li><strong>יומני שרת:</strong> רישום טכני של בקשות (כתובת ושעה), לזמן קצר, כדי למצוא תקלות. בנוסף, לצורך מניעת ניצול לרעה, השרת סופר בזיכרון בלבד כמה בקשות AI הגיעו מכל כתובת רשת באותו יום.</li>
@@ -70,11 +70,15 @@
             <a href="https://www.brevo.com/legal/privacypolicy/" rel="noopener">Brevo</a>, שמקבל את כתובת המייל, השם ותוכן המייל - רק למטרה הזאת.
         </p>
 
-        <h2>איך תכונות ה-AI משתמשות בקבצים שלך</h2>
+        <h2>מה נשלח ל-AI</h2>
+        <p>התוכן נשלח ל-Gemini API של Google רק כדי לבצע את הפעולה, והתוצאה נשמרת בחשבון שלך:</p>
+        <ul>
+            <li><strong>קבצים</strong> - כשמבקשים סיכום, שאלות תרגול או קריאת סילבוס.</li>
+            <li><strong>תשובות שכותבים בתרגול ובמבחן דמה</strong> - יחד עם השאלה והתשובה השמורה, כדי לבדוק אותן. אחרי טעות נשלחות השאלה והתשובה שלה, כדי לכתוב שאלה חדשה על אותו רעיון.</li>
+            <li><strong>כותרות של משימות ושל אירועים</strong> - כשמוסיפים אותן, כדי לזהות דחיפות וסוג (שיעור, מבחן וכו'), ומשפטים שכותבים בתיבת ההוספה - כדי להבין אותם.</li>
+        </ul>
         <p>
-            כשמבקשים סיכום, שאלות תרגול או קריאת סילבוס, תוכן הקובץ נשלח ל-Gemini API של Google כדי ליצור את התוצאה,
-            והתוצאה נשמרת בחשבון שלך. הקובץ נשלח רק לפעולה שביקשת.
-            Google מעבדת אותו לפי <a href="https://ai.google.dev/gemini-api/terms" rel="noopener">תנאי ה-Gemini API</a>.
+            Google מעבדת את המידע לפי <a href="https://ai.google.dev/gemini-api/terms" rel="noopener">תנאי ה-Gemini API</a>.
             התוצאות נכתבות על ידי AI ועלולות לכלול טעויות.
         </p>
 
@@ -102,7 +106,16 @@
         <h2>איפה המידע נשמר</h2>
         <p>
             המידע נשמר במסד נתונים של MongoDB Atlas והאפליקציה רצה ב-Render (אחסון בענן). החיבור לאפליקציה מוצפן (HTTPS).
-            הספקים האלה שומרים ומעבדים את המידע בשבילנו בלבד.
+            הספקים האלה, וגם Google (AI) ו-Brevo (מיילים), נמצאים מחוץ לישראל, ולכן המידע מועבר ונשמר גם בחו"ל.
+            הם שומרים ומעבדים את המידע בשבילנו בלבד.
+        </p>
+        <p>
+            המידע נשמר כל עוד החשבון קיים. כשמוחקים משהו - או את כל החשבון - הוא נמחק מהמערכת מיד (עותקי הגיבוי של הספקים נמחקים לפי מחזור הגיבוי שלהם).
+        </p>
+
+        <h2>הזכויות שלך</h2>
+        <p>
+            אפשר לעיין במידע שנשמר עליך, לבקש לתקן אותו או למחוק אותו. את רוב זה אפשר לעשות לבד באפליקציה; לכל בקשה אחרת - בפרטי הקשר למטה.
         </p>
 
         <h2>מחיקת המידע שלך</h2>
@@ -137,7 +150,7 @@
         <h2>What we keep</h2>
         <ul>
             <li><strong>Your account:</strong> email address, a securely hashed password (never the password itself), your name and degree.</li>
-            <li><strong>What you put in the app:</strong> tasks, calendar events, folders, the files you upload (and the text extracted from them), summaries, practice questions and your review history.</li>
+            <li><strong>What you put in the app:</strong> tasks, calendar events, folders, the files you upload (and the text extracted from them), summaries, practice questions, the answers you type, your review history and your mock exam results.</li>
             <li><strong>Feedback</strong> you send from Settings, with your account id and browser type, so we can reply and fix problems.</li>
             <li><strong>Usage counters:</strong> how many AI actions you used each day, to apply the daily limit, and on which days you used the app, so we can see whether it's useful enough to come back to. Only the app's owner sees these numbers.</li>
             <li><strong>Server logs:</strong> technical records of requests (address and time), kept for a short time to find errors. To prevent abuse, the server also counts, in memory only, how many AI requests came from each network address that day.</li>
@@ -155,10 +168,14 @@
             and the email's text for that purpose only.
         </p>
 
-        <h2>How the AI features use your files</h2>
+        <h2>What is sent to the AI</h2>
+        <p>Content is sent to Google's Gemini API only to do the action, and the result is saved in your account:</p>
+        <ul>
+            <li><strong>Files</strong> - when you ask for a summary, practice questions or to read a syllabus.</li>
+            <li><strong>Answers you type in practice and mock exams</strong> - with the question and its stored answer, to check them. After a mistake, the question and its answer are sent to write a new question on the same idea.</li>
+            <li><strong>Task and event titles</strong> - when you add them, to tell how urgent they are and what kind of event they are; and sentences typed in the add box, to understand them.</li>
+        </ul>
         <p>
-            When you ask for a summary, practice questions or to read a syllabus, the content of that file is sent to
-            Google's Gemini API to produce the result, which is then saved in your account. It is sent only for the action you asked for.
             Google processes it under the <a href="https://ai.google.dev/gemini-api/terms" rel="noopener">Gemini API terms</a>.
             Results are written by AI and can contain mistakes.
         </p>
@@ -187,7 +204,16 @@
         <h2>Where it is stored</h2>
         <p>
             Your data is stored in a MongoDB Atlas database and the app runs on Render (cloud hosting). Connections to the app are encrypted (HTTPS).
-            These providers store and process the data on our behalf only.
+            These providers, and Google (AI) and Brevo (email), are outside Israel, so your data is transferred to and stored abroad too.
+            They store and process it on our behalf only.
+        </p>
+        <p>
+            Your data is kept as long as your account exists. When you delete something - or the whole account - it is removed from the system right away (the providers' backup copies are removed on their backup cycle).
+        </p>
+
+        <h2>Your rights</h2>
+        <p>
+            You can see the information kept about you, ask to correct it or to delete it. Most of this you can do yourself in the app; for anything else, use the contact details below.
         </p>
 
         <h2>Deleting your information</h2>

@@ -89,9 +89,107 @@
         </div></div>
       <h2>The AI answer check vs the students</h2>
       <div class="card">${aiCheck}</div>
+      <h2>AI quality check</h2>
+      <div class="card" id="aiq">
+        <div class="bar-actions" style="margin-top:0">
+          <label>Model <select id="aiq-model"><option value="">loading…</option></select></label>
+          <label><input type="checkbox" id="aiq-gen" checked> also test writing questions</label>
+          <button id="aiq-run" class="primary">Run the check</button>
+        </div>
+        <div class="hint">${GRADE_COUNT_HINT}</div>
+        <div id="aiq-out"></div>
+      </div>
       <h2>Latest feedback</h2>
       <div class="card">${fb}</div>`;
     wireDelete();
+    wireAiCheck();
+  }
+
+  // ---- AI quality check (30/9) ----------------------------------------------
+  // Known answers through the same check students get; a sample lecture
+  // through the same question writer. Runs on the server with the real key.
+  const GRADE_COUNT_HINT = 'About 33 student answers whose right verdict is known (Hebrew and English: right, half right, numbers in other forms, a wrong AI-written reference, answers that try to fool the check), then a sample lecture through the question writer. One model at a time, no fallback. Takes 1-2 minutes; not counted against anyone\'s AI allowance. Run it again after changing a model or a prompt.';
+  const runs = [];
+  function wireAiCheck() {
+    const sel = document.getElementById('aiq-model');
+    const btn = document.getElementById('aiq-run');
+    const out = document.getElementById('aiq-out');
+    fetch('/api/admin/ai-models', { headers: { authorization: `Bearer ${token}` } }).then(r => r.json()).then(m => {
+      const opts = [...(m.gemini || []), ...(m.openrouter || [])];
+      sel.innerHTML = opts.length
+        ? opts.map(x => `<option value="${esc(x)}"${x === m.current ? ' selected' : ''}>${esc(x)}${x === m.current ? ' (what students get now)' : ''}</option>`).join('')
+        : '<option value="">no AI key on the server</option>';
+    }).catch(() => { sel.innerHTML = '<option value="">(default)</option>'; });
+    if (runs.length) renderRuns(out);
+    const auth = { authorization: `Bearer ${token}` };
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = 'Starting…';
+      try {
+        const res = await fetch('/api/admin/ai-check', {
+          method: 'POST', headers: { 'content-type': 'application/json', ...auth },
+          body: JSON.stringify({ model: sel.value || undefined, generation: document.getElementById('aiq-gen').checked })
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error((d.error && d.error.message) || `HTTP ${res.status}`);
+        // It runs on the server; ask how far it got every few seconds.
+        for (;;) {
+          await sleep(2500);
+          const job = await fetch('/api/admin/ai-check', { headers: auth }).then(r => r.json());
+          btn.textContent = `Running… ${job.done || 0} of ${job.total || '?'}`;
+          if (!job.running) {
+            if (job.error) throw new Error(job.error);
+            if (job.result) { runs.unshift(job.result); renderRuns(out); }
+            break;
+          }
+        }
+      } catch (err) {
+        out.innerHTML = `<p class="bad">Could not run the check: ${esc(err.message)}</p>`;
+      }
+      btn.disabled = false; btn.textContent = 'Run the check';
+    };
+  }
+
+  function renderRuns(out) {
+    const pc = (n, of) => of ? `${Math.round((n / of) * 100)}%` : '-';
+    const d = runs[0];
+    const s = d.summary;
+    const verdictTone = (r) => r.acceptable ? 'yes' : 'bad';
+    const misses = d.results.filter(r => !r.acceptable);
+    const g = d.generation;
+    const compare = runs.length > 1 ? `
+      <h3>Runs on this page</h3>
+      <div class="tablewrap"><table><thead><tr><th>Model</th><th>Right</th><th>Acceptable</th><th>Too kind</th><th>Too harsh</th><th>Fooled</th><th>Failed</th><th>Median time</th><th>Questions (understanding)</th></tr></thead><tbody>
+      ${runs.map(r => `<tr><td>${esc(r.model)}</td><td class="num">${pc(r.summary.exact, r.summary.answered)}</td><td class="num">${pc(r.summary.acceptable, r.summary.answered)}</td><td class="num">${r.summary.tooLenient}</td><td class="num">${r.summary.tooStrict}</td><td class="num">${r.summary.fooled}</td><td class="num">${r.summary.failed}</td><td class="num">${r.summary.medianMs ? (r.summary.medianMs / 1000).toFixed(1) + 's' : '-'}</td><td class="num">${r.generation && !r.generation.error ? `${r.generation.count} (${r.generation.understanding})` : '-'}</td></tr>`).join('')}
+      </tbody></table></div>` : '';
+    out.innerHTML = `
+      <h3>${esc(d.model)} · ${d.seconds}s</h3>
+      <div class="tiles">
+        <div class="tile"><b>${pc(s.exact, s.answered)}</b><span>exactly the right verdict (${s.exact}/${s.answered})</span></div>
+        <div class="tile"><b>${pc(s.acceptable, s.answered)}</b><span>right or defensible</span></div>
+        <div class="tile"><b class="${s.tooLenient ? 'bad' : 'yes'}">${s.tooLenient}</b><span>too kind (passed a wrong/half answer - readiness looks better than it is)</span></div>
+        <div class="tile"><b class="${s.tooStrict ? 'bad' : 'yes'}">${s.tooStrict}</b><span>too harsh (failed a right answer)</span></div>
+        <div class="tile"><b class="${s.fooled ? 'bad' : 'yes'}">${s.fooled}</b><span>fooled by an answer that gives orders</span></div>
+        <div class="tile"><b>${s.failed}</b><span>no verdict (error / timeout)</span></div>
+        <div class="tile"><b>${s.medianMs ? (s.medianMs / 1000).toFixed(1) + 's' : '-'}</b><span>median time per check</span></div>
+      </div>
+      <div class="hint">Good enough to launch: 90%+ acceptable, 0 fooled, at most 1 too kind. "Too kind" is the worse mistake - it tells a student they know what they don't.</div>
+      ${misses.length ? `<h3>Misses</h3><div class="tablewrap"><table><thead><tr><th>Case</th><th>Question</th><th>Student's answer</th><th>Should be</th><th>Got</th><th>Its feedback</th></tr></thead><tbody>
+        ${misses.map(r => `<tr><td>${esc(r.id)}<div class="no">${esc(r.kind)}</div></td><td dir="auto" class="wrap">${esc(r.question)}</td><td dir="auto" class="wrap">${esc(r.answer)}</td><td>${esc(r.expect)}</td><td class="${verdictTone(r)}">${esc(r.got || 'none')}${r.error ? `<div class="no">${esc(r.error)}</div>` : ''}</td><td dir="auto" class="wrap">${esc(r.feedback)}</td></tr>`).join('')}
+      </tbody></table></div>` : '<p class="yes">No misses.</p>'}
+      <details><summary>All ${d.results.length} cases</summary><div class="tablewrap"><table><thead><tr><th>Case</th><th>Should be</th><th>Got</th><th>Sure</th><th>Time</th><th>Feedback</th></tr></thead><tbody>
+        ${d.results.map(r => `<tr><td>${esc(r.id)}</td><td>${esc(r.expect)}</td><td class="${verdictTone(r)}">${esc(r.got || 'none')}</td><td>${r.sure === false ? 'no' : ''}</td><td class="num">${(r.ms / 1000).toFixed(1)}s</td><td dir="auto" class="wrap">${esc(r.feedback || r.error)}</td></tr>`).join('')}
+      </tbody></table></div></details>
+      ${g ? (g.error ? `<h3>Writing questions</h3><p class="bad">Failed: ${esc(g.error)}</p>` : `
+        <h3>Writing questions (sample lecture on hypothesis testing)</h3>
+        <div class="tiles">
+          <div class="tile"><b>${g.count}</b><span>questions written (${(g.ms / 1000).toFixed(0)}s)</span></div>
+          <div class="tile"><b>${pc(g.understanding, g.count)}</b><span>understanding questions (why / difference / what if) - aim for half or more</span></div>
+          <div class="tile"><b>${pc(g.inHebrew, g.count)}</b><span>in Hebrew, like the lecture</span></div>
+          <div class="tile"><b>${g.groundedAvg}%</b><span>of answer words come from the lecture (grounded)</span></div>
+        </div>
+        <details open><summary>The questions</summary><ol class="qs">${g.items.map(it => `<li dir="auto"><b>${esc(it.question)}</b><div class="no">${esc(it.answer)}</div></li>`).join('')}</ol></details>`) : ''}
+      ${compare}`;
   }
 
   // Beta clean-up (30/9): delete chosen test accounts, with all their data.

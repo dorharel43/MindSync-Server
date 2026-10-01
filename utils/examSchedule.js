@@ -48,26 +48,70 @@ const HEBREW_PREFIX = /^[בלהמושכ]/;
 
 function normalize(s) {
     return String(s || '').toLowerCase()
+        // Quote marks INSIDE a word are part of it: חדו"א, ג'אווה -> חדוא, גאווה
+        .replace(/(\p{L})["'`׳״](?=\p{L})/gu, '$1')
+        // A Hebrew prefix letter joined by a hyphen is part of the next word:
+        // "תכנות ב-C" is "תכנות C", not the course numbered "ב".
+        .replace(/(^|\s)[בלהמושכ][-־](?=\S)/g, '$1')
+        // A dot or slash between digits is a number or date (12.2, 1/2): keep
+        .replace(/(\d)[./](?=\d)/g, '$1\u2024')
         .replace(/["'`׳״.,:;!?()\[\]{}]/g, ' ')
         .replace(/[-־–—_/\\]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 }
 
+// Course numbering: "2", "II", "ב'" (after normalize: "ב"). These must match
+// a title word EXACTLY - "אלגברה לינארית 2" is not the exam of "... 1".
+const ROMAN = new Set(['i', 'ii', 'iii', 'iv', 'v', 'vi']);
+const isMarker = (w) => /^\d+$/.test(w) || ROMAN.has(w) || /^[\u05d0-\u05ea]$/.test(w) || /^[a-z]$/.test(w);
+
+// A title word stripped of up to two Hebrew prefix letters ("ולסטטיסטיקה").
+function titleForms(word) {
+    const forms = [word];
+    if (/^[\u05d0-\u05ea]{4,}$/.test(word)) {
+        if (HEBREW_PREFIX.test(word)) forms.push(word.slice(1));
+        if (word.length > 4 && HEBREW_PREFIX.test(word) && HEBREW_PREFIX.test(word.slice(1))) forms.push(word.slice(2));
+    }
+    return forms;
+}
+
 // Does this exam title belong to this course? Every meaningful word of the
-// course name must appear in the title - allowing a Hebrew prefix on either
-// side ("סטטיסטיקה" / "בסטטיסטיקה" / "לסטטיסטיקה"). ALL words, not any: "מבני
-// נתונים" must not match an exam in "מסדי נתונים" just because of "נתונים".
-function examMatchesCourse(examTitle, course) {
-    const title = ` ${normalize(examTitle)} `;
-    const words = normalize(course).split(' ')
-        .map(w => ({ w, bare: w.length > 3 ? w.replace(HEBREW_PREFIX, '') : w }))
-        .filter(({ w, bare }) => w.length > 1 && !GENERIC_WORDS.has(w) && !GENERIC_WORDS.has(bare));
+// course name must be a WORD of the title (whole words - "Data" is not in
+// "Database"), allowing Hebrew prefixes on either side ("סטטיסטיקה" /
+// "בסטטיסטיקה" / "לסטטיסטיקה"). ALL words, not any: "מבני נתונים" must not
+// match an exam in "מסדי נתונים" just because of "נתונים". Numbers and
+// letters that number a course ("2", "II", "ב'") must be there exactly.
+// Words after which a number or letter numbers the SITTING, not the course:
+// "אלגברה א' מועד ב'", "Calculus 1 midterm 2".
+const SITTING_WORDS = new Set(['מועד', 'מבחן', 'בוחן', 'בחינה', 'סמסטר', 'חלק', 'moed', 'exam', 'midterm', 'quiz', 'test', 'semester', 'part', 'term']);
+
+// opts.numberOptional: a title with NO course number at all ("מבחן בחדו"א")
+// may still belong to "חדו"א 2" - nextExamByCourse allows it only when the
+// student has no other course of that name.
+function examMatchesCourse(examTitle, course, opts = {}) {
+    const titleWords = new Set();
+    const raw = normalize(examTitle).split(' ').filter(Boolean);
+    let titleHasNumber = false;
+    raw.forEach((w, i) => {
+        if (isMarker(w) && i > 0 && SITTING_WORDS.has(raw[i - 1])) return;   // "מועד ב", "midterm 2"
+        if (/^\d+[a-z\u05d0-\u05ea]?$/.test(w) || ROMAN.has(w)) titleHasNumber = true;
+        titleForms(w).forEach(f => titleWords.add(f));
+        // "1A" / "2b" also carries the course number ("Physics 1A" is Physics 1)
+        const m = /^(\d+)[a-z\u05d0-\u05ea]$/.exec(w);
+        if (m) titleWords.add(m[1]);
+    });
+    const all = normalize(course).split(' ').filter(Boolean);
+    let words = all.filter(w => isMarker(w) || (w.length > 1 && !GENERIC_WORDS.has(w) && !GENERIC_WORDS.has(w.length > 3 ? w.replace(HEBREW_PREFIX, '') : w)));
+    // Only generic words ("מבוא"): then those have to do.
+    if (!words.some(w => !isMarker(w))) words = all;
     if (!words.length) return false;
-    // The course word as written, or without its Hebrew prefix ("לסטטיסטיקה"
-    // -> "סטטיסטיקה"); a prefix on the TITLE's side ("בסטטיסטיקה") is covered
-    // because it's a substring match.
-    return words.every(({ w, bare }) => title.includes(w) || title.includes(bare));
+    const skipMarkers = opts.numberOptional && !titleHasNumber;
+    return words.every((w) => {
+        if (isMarker(w)) return skipMarkers || titleWords.has(w);
+        const bare = w.length > 3 ? w.replace(HEBREW_PREFIX, '') : w;
+        return titleWords.has(w) || titleWords.has(bare);
+    });
 }
 
 // course -> its NEXT exam { title, date, daysLeft } (today counts; a past
@@ -77,8 +121,14 @@ function nextExamByCourse(courses, exams, today) {
         .filter(e => e && e.date && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.date >= today)
         .sort((a, b) => a.date.localeCompare(b.date));
     const result = {};
+    // "חדו"א 2" -> "חדוא": courses that differ only by their number.
+    const base = (c) => normalize(c).split(' ').filter(w => w && !isMarker(w)).join(' ');
+    const sameBase = new Map();
+    for (const c of courses) sameBase.set(base(c), (sameBase.get(base(c)) || 0) + 1);
     for (const course of courses) {
-        const hit = upcoming.find(e => examMatchesCourse(e.title, course));
+        const alone = sameBase.get(base(course)) === 1;
+        const hit = upcoming.find(e => examMatchesCourse(e.title, course))
+            || (alone ? upcoming.find(e => examMatchesCourse(e.title, course, { numberOptional: true })) : null);
         if (hit) result[course] = { title: hit.title, date: hit.date, daysLeft: daysBetween(today, hit.date) };
     }
     return result;
@@ -106,6 +156,7 @@ function effectiveDue(item, exam) {
 
 // How many NEW questions a course may introduce per day. With an exam: enough
 // to have seen all of them two days before it. Without: a steady 15.
+const MAX_PER_SKILL = 3;
 const NEW_PER_DAY_DEFAULT = 15;
 const NEW_PER_DAY_MIN = 10;
 const NEW_PER_DAY_MAX = 40;
@@ -157,17 +208,27 @@ function buildStudyQueue(items, examsByCourse, now = new Date(), { limit = 20, c
     // ones; the most overdue first.
     candidates.sort((a, b) => a.rank - b.rank || a.isNew - b.isNew || a.due - b.due);
 
-    // Practice items: one per skill per session (drilling five near-identical
-    // problems teaches the answers, not the skill).
-    const seenSkills = new Set();
+    // Practice items: a few per skill per session (drilling ten near-identical
+    // problems teaches the answers, not the skill). Was ONE per skill - but
+    // the AI tags a whole worksheet with the same few skills, so a worksheet
+    // of 12 exercises said "12 ready" and the session ended after one.
+    const perSkill = new Map();
     const queue = [];
     for (const c of candidates) {
         const it = c.item;
         if (it.mode === 'practice' && it.skillTag) {
-            if (seenSkills.has(it.skillTag)) continue;
-            seenSkills.add(it.skillTag);
+            const key = `${courseOf(it)}\u0000${it.skillTag}`;
+            const n = perSkill.get(key) || 0;
+            if (n >= MAX_PER_SKILL) continue;
+            perSkill.set(key, n + 1);
         }
         queue.push(it);
+    }
+    // What a session of each course would really hold - the course rows show
+    // this, so "N ready" is what "Practice" then serves.
+    for (const it of queue) {
+        const b = byCourse[courseOf(it)];
+        if (b) b.queued = (b.queued || 0) + 1;
     }
     return { queue: queue.slice(0, limit), total: queue.length, byCourse };
 }

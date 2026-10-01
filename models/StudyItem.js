@@ -31,6 +31,9 @@ const reviewSchema = new mongoose.Schema({
         default: null
     },
     reviewedAt: { type: Date, default: Date.now },
+    // One id per answer, made by the app (30/9): the same answer sent twice
+    // (retry after a timeout) is saved once.
+    clientId: { type: String, maxlength: 40 },
     secondsSpent: { type: Number, default: 0 }
 }, { _id: false });
 
@@ -108,6 +111,11 @@ const studyItemSchema = new mongoose.Schema({
 
     category: { type: String, default: '', trim: true, maxlength: 100 },
     sourceFile: { type: String, default: '', trim: true, maxlength: 300 },
+
+    // A "twin" (30/9): a new question on the same idea, written right after
+    // the student got the original wrong - so a right answer later shows
+    // understanding, not a remembered answer. Points at the original.
+    twinOf: { type: mongoose.Schema.Types.ObjectId, default: null },
 
     // ---- Scheduling state (SM-2 derived) ----
     // Days until the next review. 0 means "not yet scheduled / new".
