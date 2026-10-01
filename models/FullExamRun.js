@@ -8,6 +8,9 @@ const answerSchema = new mongoose.Schema({
     choice: { type: String, maxlength: 20, default: '' },
     text: { type: String, maxlength: 20000, default: '' },
     dontKnow: { type: Boolean, default: false },   // "I don't know" (where the exam gives points for it)
+    // copied from a photo of the student's page (the photo isn't kept); edited = the student changed the copy
+    fromPhoto: { type: Boolean, default: false },
+    photoEdited: { type: Boolean, default: false },
     // graded
     points: { type: Number, min: 0, max: 100, default: 0 },
     max: { type: Number, min: 0, max: 100, default: 0 },

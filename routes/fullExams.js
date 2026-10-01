@@ -37,6 +37,7 @@ function cleanExam(b) {
       answer: str(p.answer, 12000),
       rubric: (Array.isArray(p.rubric) ? p.rubric : []).slice(0, 12).map(r => ({ criterion: str(r.criterion, 400), points: num(r.points, 0, 100) })),
       topic: str(p.topic, 120),
+      handwritten: p.handwritten === true && p.type !== 'code',
       check: ['checked', 'corrected', 'doubtful'].includes(p.check) ? p.check : ''
     }))
   })).filter(q => q.parts.length);
@@ -113,6 +114,7 @@ function checkAnswers(exam, raw) {
       const a = sent.get(`${qi}:${pi}`) || {};
       const row = {
         q: qi, p: pi, choice: str(a.choice, 20), text: str(a.text, 20000),
+        fromPhoto: a.fromPhoto === true, photoEdited: a.fromPhoto === true && a.photoEdited === true,
         points: 0, max: part.points || 0, feedback: str(a.feedback, 3000),
         status: ['graded', 'blank', 'unchecked', 'not_chosen'].includes(a.status) ? a.status : 'blank'
       };
