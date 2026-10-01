@@ -134,7 +134,9 @@ cut("// =====================================\n// Summary window", "ipcMain.hand
 cut("// =====================================\n// App Blocker", "// =====================================\n// System Core")
 # app lifecycle
 a = s.index("function createWindow () {")
-s = s[:a].rstrip() + "\n\nmodule.exports = { ipcMain };\n"
+# The full exam's stages, for tools/exam-check.js (the owner's exam check).
+assert s.count('const EXAM_STAGES = {') == 1, 'EXAM_STAGES not found in main.js'
+s = s[:a].rstrip() + "\n\nmodule.exports = { ipcMain, examStages: EXAM_STAGES };\n"
 
 # ---- 4. uploaded originals are deleted with their file / on reset --------
 rep("""ipcMain.handle('delete-file', async (event, id) => {
