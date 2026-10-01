@@ -108,7 +108,7 @@
   // ---- AI quality check (30/9) ----------------------------------------------
   // Known answers through the same check students get; a sample lecture
   // through the same question writer. Runs on the server with the real key.
-  const GRADE_COUNT_HINT = 'About 33 student answers whose right verdict is known (Hebrew and English: right, half right, numbers in other forms, a wrong AI-written reference, answers that try to fool the check), then a sample lecture through the question writer. One model at a time, no fallback. Takes 1-2 minutes; not counted against anyone\'s AI allowance. Run it again after changing a model or a prompt.';
+  const GRADE_COUNT_HINT = '74 student answers whose right verdict is known - basics, Calculus 2, Java and C# (right, half right, other forms of the same result, a right conclusion with a wrong reason, a wrong AI-written reference, buggy code, answers that try to fool the check) - then three sample lectures (statistics, calculus, Java) through the question writer. One model at a time, no fallback. Takes 2-3 minutes; not counted against anyone\'s AI allowance. Run it again after changing a model or a prompt.';
   const runs = [];
   function wireAiCheck() {
     const sel = document.getElementById('aiq-model');
@@ -159,8 +159,8 @@
     const g = d.generation;
     const compare = runs.length > 1 ? `
       <h3>Runs on this page</h3>
-      <div class="tablewrap"><table><thead><tr><th>Model</th><th>Right</th><th>Acceptable</th><th>Too kind</th><th>Too harsh</th><th>Fooled</th><th>Failed</th><th>Median time</th><th>Questions (understanding)</th></tr></thead><tbody>
-      ${runs.map(r => `<tr><td>${esc(r.model)}</td><td class="num">${pc(r.summary.exact, r.summary.answered)}</td><td class="num">${pc(r.summary.acceptable, r.summary.answered)}</td><td class="num">${r.summary.tooLenient}</td><td class="num">${r.summary.tooStrict}</td><td class="num">${r.summary.fooled}</td><td class="num">${r.summary.failed}</td><td class="num">${r.summary.medianMs ? (r.summary.medianMs / 1000).toFixed(1) + 's' : '-'}</td><td class="num">${r.generation && !r.generation.error ? `${r.generation.count} (${r.generation.understanding})` : '-'}</td></tr>`).join('')}
+      <div class="tablewrap"><table><thead><tr><th>Model</th><th>Right</th><th>Acceptable</th><th>Too kind</th><th>Too harsh</th><th>Fooled</th><th>Failed</th><th>Median time</th><th>Questions written (stats / calculus / java)</th></tr></thead><tbody>
+      ${runs.map(r => `<tr><td>${esc(r.model)}</td><td class="num">${pc(r.summary.exact, r.summary.answered)}</td><td class="num">${pc(r.summary.acceptable, r.summary.answered)}</td><td class="num">${r.summary.tooLenient}</td><td class="num">${r.summary.tooStrict}</td><td class="num">${r.summary.fooled}</td><td class="num">${r.summary.failed}</td><td class="num">${r.summary.medianMs ? (r.summary.medianMs / 1000).toFixed(1) + 's' : '-'}</td><td class="num">${r.generation ? Object.values(r.generation).map(x => x.error ? 'x' : x.count).join(' / ') : '-'}</td></tr>`).join('')}
       </tbody></table></div>` : '';
     out.innerHTML = `
       <h3>${esc(d.model)} · ${d.seconds}s</h3>
@@ -174,23 +174,21 @@
         <div class="tile"><b>${s.medianMs ? (s.medianMs / 1000).toFixed(1) + 's' : '-'}</b><span>median time per check</span></div>
       </div>
       <div class="hint">Good enough to launch: 90%+ acceptable, 0 fooled, at most 1 too kind. "Too kind" is the worse mistake - it tells a student they know what they don't.</div>
+      ${s.groups ? `<h3>By subject</h3><div class="tablewrap"><table><thead><tr><th>Subject</th><th>Cases</th><th>Right verdict</th><th>Right or defensible</th><th>Too kind</th><th>Too harsh</th></tr></thead><tbody>
+        ${Object.entries(s.groups).map(([k, x]) => `<tr><td>${esc({ basics: 'Basics (stats, CS, economics)', calculus: 'Calculus 2', java: 'Java', csharp: 'C#' }[k] || k)}</td><td class="num">${x.cases}</td><td class="num">${pc(x.exact, x.answered)}</td><td class="num">${pc(x.acceptable, x.answered)}</td><td class="num ${x.tooLenient ? 'bad' : ''}">${x.tooLenient}</td><td class="num ${x.tooStrict ? 'bad' : ''}">${x.tooStrict}</td></tr>`).join('')}
+      </tbody></table></div>` : ''}
       ${misses.length ? `<h3>Misses</h3><div class="tablewrap"><table><thead><tr><th>Case</th><th>Question</th><th>Student's answer</th><th>Should be</th><th>Got</th><th>Its feedback</th></tr></thead><tbody>
-        ${misses.map(r => `<tr><td>${esc(r.id)}<div class="no">${esc(r.kind)}</div></td><td dir="auto" class="wrap">${esc(r.question)}</td><td dir="auto" class="wrap">${esc(r.answer)}</td><td>${esc(r.expect)}</td><td class="${verdictTone(r)}">${esc(r.got || 'none')}${r.error ? `<div class="no">${esc(r.error)}</div>` : ''}</td><td dir="auto" class="wrap">${esc(r.feedback)}</td></tr>`).join('')}
+        ${misses.map(r => `<tr><td>${esc(r.id)}<div class="no">${esc(r.kind)}</div></td><td dir="auto" class="wrap pre">${esc(r.question)}</td><td dir="auto" class="wrap pre">${esc(r.answer)}</td><td>${esc(r.expect)}</td><td class="${verdictTone(r)}">${esc(r.got || 'none')}${r.error ? `<div class="no">${esc(r.error)}</div>` : ''}</td><td dir="auto" class="wrap">${esc(r.feedback)}</td></tr>`).join('')}
       </tbody></table></div>` : '<p class="yes">No misses.</p>'}
       <details><summary>All ${d.results.length} cases</summary><div class="tablewrap"><table><thead><tr><th>Case</th><th>Should be</th><th>Got</th><th>Sure</th><th>Time</th><th>Feedback</th></tr></thead><tbody>
         ${d.results.map(r => `<tr><td>${esc(r.id)}</td><td>${esc(r.expect)}</td><td class="${verdictTone(r)}">${esc(r.got || 'none')}</td><td>${r.sure === false ? 'no' : ''}</td><td class="num">${(r.ms / 1000).toFixed(1)}s</td><td dir="auto" class="wrap">${esc(r.feedback || r.error)}</td></tr>`).join('')}
       </tbody></table></div></details>
-      ${g ? (g.error ? `<h3>Writing questions</h3><p class="bad">Failed: ${esc(g.error)}</p>` : `
-        <h3>Writing questions (sample lecture on hypothesis testing)</h3>
-        <div class="tiles">
-          <div class="tile"><b class="${g.count < 10 ? 'bad' : 'yes'}">${g.count}</b><span>questions written (${(g.ms / 1000).toFixed(0)}s) - this lecture has about 12 ideas, aim for 10+</span></div>
-          <div class="tile"><b class="${(g.bundled || 0) > 1 ? 'bad' : 'yes'}">${g.bundled || 0}</b><span>bundle several ideas in one question - aim for 0-1</span></div>
-          <div class="tile"><b>${g.practice || 0}</b><span>practice problems (the lecture has one worked example)</span></div>
-          <div class="tile"><b>${pc(g.understanding, g.count)}</b><span>understanding questions (why / difference / what if) - aim for half or more</span></div>
-          <div class="tile"><b>${pc(g.inHebrew, g.count)}</b><span>in Hebrew, like the lecture</span></div>
-          <div class="tile"><b>${g.groundedAvg}%</b><span>of answer words come from the lecture (grounded)</span></div>
-        </div>
-        <details open><summary>The questions</summary><ol class="qs">${g.items.map(it => `<li dir="auto"><b>${esc(it.question)}</b><div class="no">${esc(it.answer)}</div></li>`).join('')}</ol></details>`) : ''}
+      ${g ? `<h3>Writing questions - three kinds of material</h3>
+        <div class="tablewrap"><table><thead><tr><th>Material</th><th>Questions</th><th>Understanding</th><th>Bundled</th><th>Practice problems</th><th>LaTeX left</th><th>Grounded</th><th>Time</th></tr></thead><tbody>
+        ${Object.values(g).map(x => x.error ? `<tr><td>${esc(x.label)}</td><td colspan="7" class="bad">Failed: ${esc(x.error)}</td></tr>` : `<tr><td>${esc(x.label)}</td><td class="num ${x.count < 8 ? 'bad' : ''}">${x.count}</td><td class="num">${pc(x.understanding, x.count)}</td><td class="num ${x.bundled > 1 ? 'bad' : ''}">${x.bundled}</td><td class="num">${x.practice}</td><td class="num ${x.latexLeft ? 'bad' : ''}">${x.latexLeft}</td><td class="num">${x.groundedAvg}%</td><td class="num">${(x.ms / 1000).toFixed(0)}s</td></tr>`).join('')}
+        </tbody></table></div>
+        <div class="hint">Aim: 8+ questions per lecture, half or more "understanding", 0-1 bundled, the worked examples as practice problems, 0 LaTeX left (the app shows plain text).</div>
+        ${Object.values(g).filter(x => !x.error).map(x => `<details><summary>${esc(x.label)} - the ${x.count} questions</summary><ol class="qs">${x.items.map(it => `<li dir="auto"><b class="pre">${esc(it.question)}</b>${it.mode === 'practice' ? ' <span class="no">(practice)</span>' : ''}<div class="no pre">${esc(it.answer)}</div></li>`).join('')}</ol></details>`).join('')}` : ''}
       ${compare}`;
   }
 
