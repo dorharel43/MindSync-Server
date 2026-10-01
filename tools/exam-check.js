@@ -394,14 +394,16 @@ async function measureStructure(out) {
             const st = await run(() => S.checkExam(exam));
             const goldQs = held.questions.filter(q => !q.bonus);
             row.blueprint = usable ? { questions: usable.questions.length, totalPoints: usable.totalPoints, durationMin: usable.durationMin } : null;
-            row.generated = { questions: exam.questions.length, totalPoints: exam.totalPoints, durationMin: exam.durationMin, points: exam.questions.map(q => q.points), shapes: exam.questions.map(shapeOf), choose: exam.questions.map(q => q.choosePartsCount) };
-            row.real = { questions: goldQs.length, totalPoints: held.totalPoints, durationMin: held.durationMin, points: goldQs.map(q => q.points), shapes: goldQs.map(q => shapeOf({ parts: q.parts.map(p => appPart(p)) })), choose: goldQs.map(q => q.choosePartsCount || 0), bonus: held.questions.some(q => q.bonus) };
-            const n = Math.min(exam.questions.length, goldQs.length);
+            const genQs = exam.questions.filter(q => !q.bonus);
+            row.generated = { questions: genQs.length, totalPoints: exam.totalPoints, durationMin: exam.durationMin, points: genQs.map(q => q.points), shapes: genQs.map(shapeOf), choose: genQs.map(q => q.choosePartsCount), bonus: exam.questions.some(q => q.bonus), bonusPoints: exam.bonusPoints || 0, maxGrade: exam.maxGrade || 0, dontKnowShare: exam.dontKnowShare || 0 };
+            const realDontKnow = (held.rules || []).some(r => /לא\s*יודע|don'?t know/i.test(String(r)));
+            row.real = { questions: goldQs.length, totalPoints: held.totalPoints, durationMin: held.durationMin, points: goldQs.map(q => q.points), shapes: goldQs.map(q => shapeOf({ parts: q.parts.map(p => appPart(p)) })), choose: goldQs.map(q => q.choosePartsCount || 0), bonus: held.questions.some(q => q.bonus), maxGrade: held.maxGrade || 0, dontKnow: realDontKnow };
+            const n = Math.min(genQs.length, goldQs.length);
             let samePoints = 0, sameShape = 0, sameChoose = 0;
             for (let i = 0; i < n; i++) {
-                if (Math.abs(exam.questions[i].points - goldQs[i].points) < 0.6) samePoints += 1;
+                if (Math.abs(genQs[i].points - goldQs[i].points) < 0.6) samePoints += 1;
                 if (row.generated.shapes[i] === row.real.shapes[i]) sameShape += 1;
-                if ((exam.questions[i].choosePartsCount > 0) === ((goldQs[i].choosePartsCount || 0) > 0)) sameChoose += 1;
+                if ((genQs[i].choosePartsCount > 0) === ((goldQs[i].choosePartsCount || 0) > 0)) sameChoose += 1;
             }
             // Copying: a generated part that shares most of its 5-word runs with a past question.
             const pastGrams = train.flatMap(g => g.questions.flatMap(q => q.parts.map(p => ({ id: `${g.id} ${q.n}.${p.label}`, g: grams(`${q.stem || ''} ${p.text}`) }))));
@@ -413,11 +415,14 @@ async function measureStructure(out) {
                 if (best.o >= 0.5) copies.push({ part: `${q.n}.${p.label}`, like: best.id, overlap: Math.round(best.o * 100) });
             }));
             row.match = {
-                questionCount: exam.questions.length === goldQs.length,
+                questionCount: genQs.length === goldQs.length,
                 totalPoints: Math.abs(exam.totalPoints - held.totalPoints) < 0.6,
                 duration: exam.durationMin === held.durationMin,
                 samePoints: `${samePoints}/${goldQs.length}`, sameShape: `${sameShape}/${goldQs.length}`, sameChoose: `${sameChoose}/${goldQs.length}`,
-                bonusKept: row.real.bonus ? false : null,   // the app has no bonus questions yet
+                // true = as in the real exam; 'invented' = a bonus / cap / "don't know" the real exam doesn't have
+                bonus: row.real.bonus ? row.generated.bonus : (row.generated.bonus ? 'invented' : null),
+                maxGrade: row.real.maxGrade ? row.generated.maxGrade === row.real.maxGrade : (row.generated.maxGrade ? 'invented' : null),
+                dontKnow: row.real.dontKnow ? row.generated.dontKnowShare > 0 : (row.generated.dontKnowShare ? 'invented' : null),
                 reasonOnChoice: goldQs.some(q => q.parts.some(p => p.type === 'mc' && p.reasonRequired)) ? 'lost (the app has no mc + reason)' : null
             };
             row.copies = copies;

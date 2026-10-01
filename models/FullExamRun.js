@@ -7,6 +7,7 @@ const answerSchema = new mongoose.Schema({
     p: { type: Number, min: 0, max: 60 },          // part index
     choice: { type: String, maxlength: 20, default: '' },
     text: { type: String, maxlength: 20000, default: '' },
+    dontKnow: { type: Boolean, default: false },   // "I don't know" (where the exam gives points for it)
     // graded
     points: { type: Number, min: 0, max: 100, default: 0 },
     max: { type: Number, min: 0, max: 100, default: 0 },
@@ -25,7 +26,8 @@ const fullExamRunSchema = new mongoose.Schema({
     usedSec: { type: Number, min: 0, default: 0 },
     answers: { type: [answerSchema], default: [] },
     score: { type: Number, min: 0, default: 0 },         // points
-    max: { type: Number, min: 0, default: 0 },           // points that were graded
+    max: { type: Number, min: 0, default: 0 },           // points that were graded (bonus not included)
+    outOf: { type: Number, min: 0, default: 0 },         // the grade is score / outOf, at most 100%
     percent: { type: Number, min: 0, max: 100, default: 0 },
     weakTopics: { type: [{ type: String, maxlength: 120 }], default: [] },
     clientRunId: { type: String, maxlength: 40, required: true }
