@@ -98,7 +98,7 @@ app.use((req, res, next) => {
 const jwt = require('jsonwebtoken');
 const smallJson = express.json({ limit: '100kb' });
 const bigJson = express.json({ limit: '3mb' });
-const BIG_BODY = /^\/api\/(rpc|files|study\/bulk)(\/|$)/;
+const BIG_BODY = /^\/api\/(rpc|files|study\/bulk|full-exams)(\/|$)/;
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/uploads')) return next();   // raw file bytes, its own parser + limit
   if (BIG_BODY.test(req.path)) {
@@ -259,6 +259,7 @@ app.use('/api/files', require('./routes/files'));
 // /api/stats was removed with XP, levels and the streak.
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/study', require('./routes/study'));
+app.use('/api/full-exams', require('./routes/fullExams'));
 app.use('/api/admin', require('./routes/admin'));
 // Web version: the app's logic (AI, parsing, planner...) and file uploads.
 app.use('/api/rpc', require('./rpc'));

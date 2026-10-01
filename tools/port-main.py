@@ -76,6 +76,23 @@ rep("""        if (!fs.existsSync(sourcePath)) {
         const sizeMb = buffer.length / (1024 * 1024);
         console.log(`📕 generate-study-items-pdf: ${options.sourceFile || sourcePath} (${sizeMb.toFixed(1)} MB)`);""")
 
+# a full exam reads a course's past exams (1/10)
+rep("""async function readOriginalFile(sourcePath) {
+    if (!sourcePath || !fs.existsSync(sourcePath)) return null;
+    return fs.readFileSync(sourcePath);
+}""",
+"""async function readOriginalFile(sourcePath) {
+    return sourcePath ? storage.readSource(sourcePath) : null;
+}""")
+
+# full-exam jobs belong to the signed-in user (1/10)
+rep("""function fullExamJobOwner() {
+    return 'me';
+}""", """function fullExamJobOwner() {
+    const ctx = currentContext();
+    return ctx ? String(ctx.userId) : '';
+}""")
+
 # ---- 3. desktop-only sections ------------------------------------------
 # reading/choosing files on the computer -> browser upload (rpc/uploads.js)
 cut("// =====================================\n// File Reading", "// =====================================\n// Stats - removed")
