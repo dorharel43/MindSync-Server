@@ -37,6 +37,7 @@ function cleanExam(b) {
       answer: str(p.answer, 12000),
       rubric: (Array.isArray(p.rubric) ? p.rubric : []).slice(0, 12).map(r => ({ criterion: str(r.criterion, 400), points: num(r.points, 0, 100) })),
       topic: str(p.topic, 120),
+      handwritten: p.handwritten === true && p.type !== 'code',
       check: ['checked', 'corrected', 'doubtful'].includes(p.check) ? p.check : ''
     }))
   })).filter(q => q.parts.length);
@@ -58,6 +59,7 @@ function cleanExam(b) {
     bonusPoints: Math.min(5000, sum(questions.filter(q => q.bonus))),
     maxGrade: maxGrade > 0 && maxGrade < totalPoints && maxGrade >= totalPoints * 0.75 ? maxGrade : 0,
     dontKnowShare: num(b.dontKnowShare, 0, 0.5),
+    handwrittenMarked: b.handwrittenMarked === true,
     questions,
     recurring: (Array.isArray(b.recurring) ? b.recurring : []).slice(0, 20).map(r => ({ topic: str(r.topic, 200), count: num(r.count, 0, 50), of: num(r.of, 0, 50), example: str(r.example, 600) })),
     language: str(b.language, 10)
@@ -113,6 +115,7 @@ function checkAnswers(exam, raw) {
       const a = sent.get(`${qi}:${pi}`) || {};
       const row = {
         q: qi, p: pi, choice: str(a.choice, 20), text: str(a.text, 20000),
+        fromPhoto: a.fromPhoto === true, photoEdited: a.fromPhoto === true && a.photoEdited === true,
         points: 0, max: part.points || 0, feedback: str(a.feedback, 3000),
         status: ['graded', 'blank', 'unchecked', 'not_chosen'].includes(a.status) ? a.status : 'blank'
       };
@@ -302,6 +305,31 @@ router.post(
     if (Array.isArray(req.body.weakTopics)) run.weakTopics = req.body.weakTopics.slice(0, 10).map(t => str(t, 120));
     await run.save();
     res.json({ ...run.toObject(), id: String(run._id) });
+  })
+);
+
+// POST /api/full-exams/:id/runs/:runId/photo-feedback   - where the working
+// behind a wrong choice went wrong (from a photo). Feedback only: the points
+// don't change, and only a choice question marked wrong takes it.
+router.post(
+  '/:id/runs/:runId/photo-feedback',
+  asyncHandler(async (req, res) => {
+    if (!isId(req.params.id) || !isId(req.params.runId)) throw new ApiError(404, 'Result not found');
+    const exam = await FullExam.findOne({ _id: req.params.id, userId: req.userId }).select('questions').lean();
+    if (!exam) throw new ApiError(404, 'Result not found');
+    const b = req.body || {};
+    // Read, set, save - once more if "check them again" saved the sitting in between.
+    for (let attempt = 0; ; attempt++) {
+      const run = await FullExamRun.findOne({ _id: req.params.runId, examId: req.params.id, userId: req.userId });
+      if (!run) throw new ApiError(404, 'Result not found');
+      const row = run.answers.find(a => a.q === Number(b.q) && a.p === Number(b.p));
+      const part = row && exam.questions[row.q] && exam.questions[row.q].parts[row.p];
+      const choiceOnly = !!part && (part.type === 'mc' || part.type === 'tf') && !part.reasonRequired;
+      if (!row || !choiceOnly || row.status !== 'graded' || row.points >= row.max) throw new ApiError(400, 'Only a wrong choice takes this feedback.');
+      row.photoFeedback = str(b.feedback, 3000);
+      try { await run.save(); break; } catch (err) { if (err && err.name === 'VersionError' && attempt < 2) continue; throw err; }
+    }
+    res.json({ ok: true });
   })
 );
 
