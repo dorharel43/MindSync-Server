@@ -108,7 +108,8 @@ function cleanMarks(part, raw) {
   for (const m of list) {
     const c = Number(m && m.c);
     if (!Number.isInteger(c) || c < 0 || c >= rubric.length || marks.some(x => x.c === c)) return [];
-    marks.push({ c, points: num(m.points, 0, Number(rubric[c].points) || 0), note: str(m.note, 300) });
+    const max = Number(rubric[c].points) || 0;
+    marks.push({ c, criterion: str(rubric[c].criterion, 400), max, points: num(m.points, 0, max), note: str(m.note, 300) });
   }
   return marks.sort((a, b) => a.c - b.c);
 }
@@ -117,7 +118,10 @@ function cleanMarks(part, raw) {
 // 0 whatever the marks say).
 function markedPoints(part, row, a) {
   const marks = cleanMarks(part, a.marks);
-  const sent = marks.length ? Math.round(marks.reduce((n, m) => n + m.points, 0) * 100) / 100 : a.points;
+  // Every criterion in full = the part's full points (a scheme scaled to 2
+  // decimals - 3.33 x 3 - would leave a perfect answer at 9.99 / 10).
+  const full = marks.length && marks.every(m => m.points >= m.max);
+  const sent = full ? row.max : marks.length ? Math.round(marks.reduce((n, m) => n + m.points, 0) * 100) / 100 : a.points;
   const points = ruledPoints(part, row, sent);
   return { points, marks: marks.length && Math.abs(points - Math.min(sent, row.max)) < 0.011 ? marks : [] };
 }

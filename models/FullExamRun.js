@@ -19,7 +19,9 @@ const answerSchema = new mongoose.Schema({
     feedback: { type: String, maxlength: 3000, default: '' },
     // a written answer's points per criterion of the part's marking scheme
     // (c = the criterion's index); `points` is their sum. [] = not marked so.
-    marks: { type: [{ _id: false, c: { type: Number, min: 0, max: 11 }, points: { type: Number, min: 0, max: 100 }, note: { type: String, maxlength: 300, default: '' } }], default: [] },
+    // Each keeps its criterion and points as they were when graded: a late
+    // "corrected" check can replace the part's scheme afterwards.
+    marks: { type: [{ _id: false, c: { type: Number, min: 0, max: 11 }, criterion: { type: String, maxlength: 400, default: '' }, max: { type: Number, min: 0, max: 100, default: 0 }, points: { type: Number, min: 0, max: 100 }, note: { type: String, maxlength: 300, default: '' } }], default: [] },
     // 'graded' | 'blank' | 'unchecked' (the AI couldn't check it - left out of the score) | 'not_chosen'
     status: { type: String, enum: ['graded', 'blank', 'unchecked', 'not_chosen'], default: 'graded' }
 }, { _id: false });
