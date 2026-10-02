@@ -19,14 +19,17 @@ const partSchema = new mongoose.Schema({
     text: { type: String, maxlength: 6000, default: '' },
     options: { type: [{ type: String, maxlength: 1000 }], default: [] },
     correct: { type: String, maxlength: 20, default: '' },        // mc: option index "0".."n"; tf: "true"/"false"
-    reasonRequired: { type: Boolean, default: false },              // tf: no points without a justification
+    // tf: no points without a justification; mc: "circle and explain" - a
+    // wrong choice 0, a right one 30%-100% by the reason
+    reasonRequired: { type: Boolean, default: false },
     points: { type: Number, min: 0, max: 100, default: 0 },
     answer: { type: String, maxlength: 12000, default: '' },        // the full worked solution
     rubric: { type: [rubricSchema], default: [] },
     topic: { type: String, maxlength: 120, default: '' },
     // 'checked' = a second, independent solution agreed; 'corrected' = it
-    // disagreed and the solution was replaced; '' = not checked
-    check: { type: String, enum: ['checked', 'corrected', ''], default: '' }
+    // disagreed and the solution was replaced; 'doubtful' = a late check (on a
+    // saved exam) found the question itself wrong or unclear; '' = not checked
+    check: { type: String, enum: ['checked', 'corrected', 'doubtful', ''], default: '' }
 }, { _id: false });
 
 const questionSchema = new mongoose.Schema({
@@ -36,6 +39,9 @@ const questionSchema = new mongoose.Schema({
     points: { type: Number, min: 0, max: 1000, default: 0 },
     // "answer 1 of 2" inside a question (e.g. prove ONE of two theorems)
     choosePartsCount: { type: Number, min: 0, max: 50, default: 0 },
+    // a bonus question (only when the past exams mark one): its points are on
+    // top of totalPoints
+    bonus: { type: Boolean, default: false },
     parts: { type: [partSchema], default: [] }
 }, { _id: false });
 
@@ -56,7 +62,13 @@ const fullExamSchema = new mongoose.Schema({
     durationMin: { type: Number, min: 5, max: 600, default: 120 },
     materials: { type: String, maxlength: 400, default: '' },       // allowed material, as the past exams say
     instructions: { type: String, maxlength: 2000, default: '' },
-    totalPoints: { type: Number, min: 0, max: 5000, default: 100 },
+    totalPoints: { type: Number, min: 0, max: 5000, default: 100 },   // without bonus questions
+    bonusPoints: { type: Number, min: 0, max: 5000, default: 0 },
+    // the top grade when the points add up to more ("108 points, the grade is
+    // at most 100"); 0 = the grade is out of totalPoints
+    maxGrade: { type: Number, min: 0, max: 5000, default: 0 },
+    // part of the points for "I don't know" (e.g. 0.25), when the past exams say so
+    dontKnowShare: { type: Number, min: 0, max: 0.5, default: 0 },
     questions: { type: [questionSchema], default: [] },
     recurring: { type: [recurringSchema], default: [] },             // what repeats in the past exams
     language: { type: String, maxlength: 10, default: '' }
