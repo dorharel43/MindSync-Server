@@ -44,6 +44,21 @@ const eventSchema = new mongoose.Schema(
       default: null,
       match: [/^\d{4}-\d{2}-\d{2}$/, 'Until must be YYYY-MM-DD'],
     },
+    // Weekly events only: the first day it can happen (YYYY-MM-DD). null =
+    // from whenever it was added. A timetable uploaded two weeks before the
+    // semester filled those two weeks with classes that weren't happening.
+    from: {
+      type: String,
+      default: null,
+      match: [/^\d{4}-\d{2}-\d{2}$/, 'From must be YYYY-MM-DD'],
+    },
+    // The same id on every class added by one timetable upload, so a wrong
+    // upload can be deleted in one go instead of class by class.
+    importId: {
+      type: String,
+      default: null,
+      maxlength: 64,
+    },
     // Where it happens (a room, "בניין 7 חדר 101") - from a timetable photo,
     // shown on the card and copied to Google Calendar's location.
     location: {
