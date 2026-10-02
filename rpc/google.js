@@ -259,17 +259,25 @@ function addMinutes(dateIso, time, minutes) {
 }
 
 // Same rules as the desktop app: a one-time event on its date; a weekly one
-// (no date) from its next day of the week (today counts), repeating weekly.
+// (no date) from its next day of the week (today counts) - or, when it
+// starts later (`from`, the semester's first day), from its first day of
+// the week on or after that - repeating weekly.
 function toGoogleEvent(evt, now = new Date()) {
     const time = /^\d{1,2}:\d{2}$/.test(evt.time || '') ? evt.time.padStart(5, '0') : '09:00';
     let dateIso = /^\d{4}-\d{2}-\d{2}$/.test(evt.date || '') ? evt.date : null;
     const weekly = !dateIso;
     if (!dateIso) {
         const today = localToday(now);
+        let startIso = today.iso, startDay = today.weekday;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(evt.from || '') && evt.from > today.iso) {
+            const [y, m, d] = evt.from.split('-').map(Number);
+            startIso = evt.from;
+            startDay = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+        }
         const target = DAY_NAMES.indexOf(evt.day);
-        let add = target === -1 ? 0 : target - today.weekday;
+        let add = target === -1 ? 0 : target - startDay;
         if (add < 0) add += 7;
-        dateIso = addMinutes(today.iso, '00:00', add * 1440).slice(0, 10);
+        dateIso = addMinutes(startIso, '00:00', add * 1440).slice(0, 10);
     }
     const duration = Number(evt.durationMinutes) || 60;
     return {
