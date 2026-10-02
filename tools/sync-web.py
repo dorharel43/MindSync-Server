@@ -7,7 +7,8 @@ here and makes the few changes a browser needs:
 
   - web-shim.js (from web-src/) is loaded first - it provides
     require('electron') in the browser (see that file);
-  - summary.html loads KaTeX from /app/vendor/katex instead of node_modules.
+  - summary.html and index.html load KaTeX from /app/vendor/katex instead of
+    node_modules (index.html: for math.js, the formulas on every screen).
 
 Usage (from the server repo, with the desktop repo next to it):
     python3 tools/sync-web.py [../mindsync]
@@ -27,7 +28,7 @@ SRC = SERVER / 'web-src'
 
 COPY = [
     'index.html', 'summary.html',
-    'renderer.js', 'summary.js', 'ui.js', 'icons.js', 'i18n.js', 'i18n-he.js',
+    'renderer.js', 'summary.js', 'math.js', 'ui.js', 'icons.js', 'i18n.js', 'i18n-he.js',
     'tokens.css', 'themes.css', 'ui-kit.css', 'styles.css', 'design.css',
 ]
 OPTIONAL = ['assets', 'icon.png', 'favicon.ico']
@@ -124,6 +125,14 @@ def main():
     # index.html: shim first, then the web page's icons / install / link
     # preview tags ({{BASE}} is filled in by server.js).
     index = read(OUT / 'index.html')
+    # KaTeX from the server: its stylesheet, and a <script> before math.js
+    # (the desktop app require()s it from node_modules).
+    index, n = re.subn(r'node_modules/katex/dist/', 'vendor/katex/', index)
+    if n == 0:
+        fail('index.html: the KaTeX stylesheet link was not found')
+    index, n = re.subn(r'(<script src="math\.js")', r'<script src="vendor/katex/katex.min.js" defer></script>\n    \1', index, count=1)
+    if n == 0:
+        fail('index.html: could not add the KaTeX script before math.js')
     index = add_header(add_shim(index, 'index.html'))
     index = add_head_tags(index, 'index.html', WEB_HEAD)
     write(OUT / 'index.html', index)

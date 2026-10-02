@@ -476,7 +476,10 @@ async function measureStructure(out) {
         console.warn(`\n■ ${err.message}`);
     }
     report.seconds = Math.round((Date.now() - t0) / 1000);
-    report.runs.push({ at: report.ranAt, calls, seconds: report.seconds, stopped: report.stopped || null });
+    // Formulas the model wrote this run: kept (KaTeX draws them) / flattened (it couldn't).
+    const formulas = S.FORMULA_STATS ? { ...S.FORMULA_STATS } : null;
+    report.runs.push({ at: report.ranAt, calls, seconds: report.seconds, stopped: report.stopped || null, formulas });
+    if (formulas) console.log(`formulas: ${formulas.kept} kept, ${formulas.flattened} flattened (couldn't be drawn)`);
     save();
     console.log(`\n${calls} AI calls, ${report.seconds}s - report: ${OUT}`);
     for (const [m, r] of Object.entries(report.results)) {
