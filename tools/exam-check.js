@@ -141,8 +141,11 @@ async function gradeOne(g, qi, pi, part, answer) {
     // (a reply with neither a reason class nor points is a failure, as in the app - not 30%)
     if (part.type === 'mc' && part.reasonRequired && r && S.reasonedChoicePoints
         && (Number.isFinite(Number(r.points)) || /^(full|partial|wrong|none)$/i.test(String(r.reason || '').trim()))) return { points: S.reasonedChoicePoints(part, r), reason: r.reason || '', feedback: String(r.feedback || '').slice(0, 300) };
-    if (!r || !Number.isFinite(Number(r.points))) throw new Error('no points in the answer');
-    return { points: Math.max(0, Math.min(part.points, Number(r.points))), feedback: String(r.feedback || '').slice(0, 300) };
+    // Points per criterion, added up as in the app (its total only when the marks are incomplete).
+    const marks = r && S.marksFromAi ? S.marksFromAi(part, r) : null;
+    if (!r || !(marks || Number.isFinite(Number(r.points)))) throw new Error('no points in the answer');
+    const points = S.pointsFromAi ? S.pointsFromAi(part, r, marks) : Math.max(0, Math.min(part.points, Number(r.points)));
+    return { points, marked: !!marks, feedback: String(r.feedback || '').slice(0, 300) };
 }
 
 async function measureGrading(result) {
@@ -177,8 +180,9 @@ async function measureGrading(result) {
             }
             const answer = { choice: c.choice || '', text: c.answer };
             const got = [];
+            let marked = 0;   // replies that marked every criterion (the rest fell back to a total)
             for (let i = 0; i < REPEAT; i++) {
-                try { got.push((await gradeOne(g, c.q, c.p, part, answer)).points); } catch (err) {
+                try { const one = await gradeOne(g, c.q, c.p, part, answer); got.push(one.points); if (one.marked) marked += 1; } catch (err) {
                     if (err instanceof OutOfCalls) throw err;
                     got.push(null);
                     console.warn(`   ✖ ${c.id}: ${err.message}`);
@@ -189,7 +193,7 @@ async function measureGrading(result) {
             const [lo, hi] = c.expectPct;
             const m = median(ps);
             const verdict = m === null ? 'failed' : m < lo ? 'too strict' : m > hi ? 'too lenient' : 'in range';
-            rows.push({ id: c.id, exam: c.exam, kind: c.kind, expect: c.expectPct, got: ps, median: m, spread: ps.length ? Math.max(...ps) - Math.min(...ps) : null, verdict });
+            rows.push({ id: c.id, exam: c.exam, kind: c.kind, expect: c.expectPct, got: ps, median: m, spread: ps.length ? Math.max(...ps) - Math.min(...ps) : null, verdict, marked });
             console.log(`   ${verdict === 'in range' ? '✓' : '✗'} ${c.id.padEnd(28)} ${String(m).padStart(5)}%  [${lo}-${hi}]  runs: ${ps.join(', ')}`);
         }
     }
