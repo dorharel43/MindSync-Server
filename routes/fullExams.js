@@ -98,6 +98,34 @@ function ruledPoints(part, row, sent) {
   return num(sent, 0, row.max);
 }
 
+// The points per criterion the app sent: every criterion of the part's
+// marking scheme once, each within its own points - or none at all.
+function cleanMarks(part, raw) {
+  const rubric = Array.isArray(part.rubric) ? part.rubric : [];
+  const list = Array.isArray(raw) ? raw : [];
+  if (!rubric.length || list.length !== rubric.length || (part.type === 'mc' && part.reasonRequired)) return [];
+  const marks = [];
+  for (const m of list) {
+    const c = Number(m && m.c);
+    if (!Number.isInteger(c) || c < 0 || c >= rubric.length || marks.some(x => x.c === c)) return [];
+    const max = Number(rubric[c].points) || 0;
+    marks.push({ c, criterion: str(rubric[c].criterion, 400), max, points: num(m.points, 0, max), note: str(m.note, 300) });
+  }
+  return marks.sort((a, b) => a.c - b.c);
+}
+// A written answer graded per criterion: its points are the marks' sum - and
+// the marks are kept only where the rules leave that sum (a wrong verdict is
+// 0 whatever the marks say).
+function markedPoints(part, row, a) {
+  const marks = cleanMarks(part, a.marks);
+  // Every criterion in full = the part's full points (a scheme scaled to 2
+  // decimals - 3.33 x 3 - would leave a perfect answer at 9.99 / 10).
+  const full = marks.length && marks.every(m => m.points >= m.max);
+  const sent = full ? row.max : marks.length ? Math.round(marks.reduce((n, m) => n + m.points, 0) * 100) / 100 : a.points;
+  const points = ruledPoints(part, row, sent);
+  return { points, marks: marks.length && Math.abs(points - Math.min(sent, row.max)) < 0.011 ? marks : [] };
+}
+
 // The graded parts as the app sent them, checked against the paper: only
 // parts that exist, once each; out of the part's own points; multiple choice
 // and true/false without a reason marked here; "answer N of M" counts at most
@@ -133,7 +161,7 @@ function checkAnswers(exam, raw) {
       if (row.status === 'graded') {
         if (row.dontKnow) row.points = Math.round(row.max * exam.dontKnowShare * 100) / 100;
         else if (auto) row.points = row.choice === String(part.correct) ? row.max : 0;
-        else row.points = ruledPoints(part, row, a.points);
+        else Object.assign(row, markedPoints(part, row, a));
       }
       out.push(row);
     });
@@ -298,7 +326,7 @@ router.post(
       if (row.status !== 'unchecked' || !a || a.status !== 'graded') return row;
       // The same rules as saving a sitting.
       const part = exam.questions[row.q] && exam.questions[row.q].parts[row.p];
-      return { ...row, status: 'graded', points: part ? ruledPoints(part, { ...row, text: String(row.text || '') }, a.points) : 0, feedback: str(a.feedback, 3000) };
+      return { ...row, status: 'graded', ...(part ? markedPoints(part, { ...row, text: String(row.text || '') }, a) : { points: 0, marks: [] }), feedback: str(a.feedback, 3000) };
     });
     run.answers = answers;
     Object.assign(run, scoreAnswers(exam, answers));
