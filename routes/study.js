@@ -493,23 +493,36 @@ function startOfAppDay(now = new Date()) {
 }
 
 // GET /api/study/today   (3/10, the daily goal)
-// { answered, goal }: questions answered today - in practice and in mock
-// exams (a mock exam saves each answer as a review too - POST /exam/runs -
-// so the reviews already hold them), and in full exams (each part written,
-// chosen or marked "I don't know"; a full exam saves no reviews). Nothing is
-// counted twice. No streaks: tomorrow starts again from 0, no penalty.
+// { answered, goal }: questions answered today - in practice, in mock exams
+// and in full exams. Nothing is counted twice:
+//  - a mock exam saves its checked answers as reviews too (POST /exam/runs),
+//    so they come with the reviews - except its blank ones (skipped or out
+//    of time, saved as "I don't know"), taken off as in a full exam, where a
+//    blank part doesn't count; and its unchecked ones (no review) are added,
+//    as a full exam's unchecked written parts count;
+//  - a full exam saves no reviews: each part written, chosen, "I don't know"
+//    or from a photo counts.
+// No streaks: tomorrow starts again from 0, no penalty.
 router.startOfAppDay = startOfAppDay;   // (for tests)
 router.get(
   '/today',
   asyncHandler(async (req, res) => {
     const since = startOfAppDay();
-    const [items, fulls, user] = await Promise.all([
+    const [items, mocks, fulls, user] = await Promise.all([
       StudyItem.find({ userId: req.userId, 'reviews.reviewedAt': { $gte: since } }).select('reviews.reviewedAt').lean(),
+      ExamRun.find({ userId: req.userId, finishedAt: { $gte: since } }).select('answers.verdict').lean(),
       FullExamRun.find({ userId: req.userId, finishedAt: { $gte: since } }).select('answers').lean(),
       User.findById(req.userId).select('dailyGoal').lean()
     ]);
     let answered = 0;
     for (const i of items) answered += (i.reviews || []).filter(r => r.reviewedAt && new Date(r.reviewedAt) >= since).length;
+    for (const r of mocks) {
+      for (const a of r.answers || []) {
+        if (a.verdict === 'blank') answered -= 1;
+        else if (a.verdict === 'unchecked') answered += 1;
+      }
+    }
+    answered = Math.max(0, answered);   // (a blank whose review failed to save)
     for (const r of fulls) {
       answered += (r.answers || []).filter(a => a.status !== 'not_chosen'
         && (String(a.text || '').trim() || a.choice || a.dontKnow || a.fromPhoto)).length;
