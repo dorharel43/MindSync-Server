@@ -6,7 +6,7 @@
 //
 //   GEMINI_API_KEY=... node tools/exam-check.js --set ../mindsync-quality-data \
 //       --measure grading,check,solve,structure [--model gemini-3.8-flash] \
-//       [--repeat 3] [--max-calls 150] [--gap-ms 4000] [--only calc2] \
+//       [--repeat 3] [--max-calls 150] [--gap-ms 4000] [--only calc2] --approved \
 //       [--holdout] [--out report.json] [--resume report.json] [--variants gold-rubric]
 //
 // Measures (see PLAN.md in the gold set):
@@ -23,6 +23,8 @@
 // Nothing is saved anywhere and no user's allowance is touched. A run stops
 // at --max-calls AI calls (the free tier's limits), waits --gap-ms between
 // calls, and waits out "slow down" (429) and "busy" (503) up to 5 times.
+// tools/ai-guard.js guards it: a real key needs --approved, and the run stops
+// on the spending cap, repeated failures, --max-tokens or --max-minutes.
 const fs = require('fs');
 const path = require('path');
 
@@ -58,29 +60,29 @@ const aiProvider = require('../rpc/aiProvider');
 const { examStages: S } = require('../rpc/handlers');
 const { extractPdfText } = require('../rpc/pdfExtract');
 
-// ---- AI calls: counted, spaced, 429s waited out ---------------------------
-let calls = 0;
+// ---- AI calls: guarded, spaced, 429s waited out ---------------------------
+// tools/ai-guard.js stops the run on a fatal error (spending cap, rejected
+// key, daily quota), repeated failures, or a call / token / time ceiling -
+// and refuses a real key without --approved.
+const guard = require('./ai-guard').create({ maxCalls: MAX_CALLS, label: 'exam-check' }).wrap(aiProvider).announce();
 let lastCallAt = 0;
-class OutOfCalls extends Error {}
+const OutOfCalls = require('./ai-guard').GuardStop;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 for (const name of ['generateText', 'generateFromPdf']) {
-    const real = aiProvider[name].bind(aiProvider);
+    const guarded = aiProvider[name];
     aiProvider[name] = async (...a) => {
         for (let attempt = 0; ; attempt++) {
-            if (calls >= MAX_CALLS) throw new OutOfCalls(`stopped at --max-calls ${MAX_CALLS}`);
             const wait = lastCallAt + GAP_MS - Date.now();
             if (wait > 0) await sleep(wait);
-            calls += 1;
             lastCallAt = Date.now();
             try {
-                return await real(...a);
+                return await guarded(...a);
             } catch (err) {
                 if (err instanceof OutOfCalls) throw err;
                 // 429 = too many calls for the free tier; 503 = the model is
                 // busy (common on the free tier). Both pass - wait and retry.
-                const limited = err.status === 429 || /\b429\b|quota|rate limit/i.test(err.message);
+                const limited = err.status === 429 || /\b429\b|rate limit/i.test(err.message);
                 const busy = err.status === 503 || err.overloaded || /\b503\b|busy|overloaded|high demand/i.test(err.message);
-                if (err.dailyQuota) throw new OutOfCalls(`the key's daily quota ran out (${err.message})`);
                 if ((!limited && !busy) || attempt >= 5) throw err;
                 const ms = limited ? Math.max(err.retryAfterMs || 0, 30000) : 15000 * 2 ** Math.min(attempt, 3);
                 console.warn(`   ⏳ ${limited ? 'rate limited' : 'model busy'} - waiting ${Math.round(ms / 1000)}s`);
@@ -462,7 +464,7 @@ async function measureStructure(out) {
         if (r.check) r.check.summary = summariseCheck(r.check);
         if (r.solve) r.solve.summary = summariseSolve(r.solve);
     };
-    const save = () => { summarise(); report.calls = (before && before.calls || 0) + calls; fs.writeFileSync(OUT, JSON.stringify(report, null, 1)); };
+    const save = () => { summarise(); report.calls = (before && before.calls || 0) + guard.stats().calls; fs.writeFileSync(OUT, JSON.stringify(report, null, 1)); };
     const t0 = Date.now();
     try {
         for (const m of MEASURES) {
@@ -478,10 +480,11 @@ async function measureStructure(out) {
     report.seconds = Math.round((Date.now() - t0) / 1000);
     // Formulas the model wrote this run: kept (KaTeX draws them) / flattened (it couldn't).
     const formulas = S.FORMULA_STATS ? { ...S.FORMULA_STATS } : null;
-    report.runs.push({ at: report.ranAt, calls, seconds: report.seconds, stopped: report.stopped || null, formulas });
+    const used = guard.stats();
+    report.runs.push({ at: report.ranAt, calls: used.calls, tokens: { input: used.input, thinking: used.thinking, output: used.output }, seconds: report.seconds, stopped: report.stopped || guard.stopped() || null, formulas });
     if (formulas) console.log(`formulas: ${formulas.kept} kept, ${formulas.flattened} flattened (couldn't be drawn)`);
     save();
-    console.log(`\n${calls} AI calls, ${report.seconds}s - report: ${OUT}`);
+    console.log(`\n${used.calls} AI calls, ${report.seconds}s - report: ${OUT}`);
     for (const [m, r] of Object.entries(report.results)) {
         if (r.summary) console.log(m, JSON.stringify(r.summary));
         if (r.variants) for (const [v, x] of Object.entries(r.variants)) console.log(`${m} (${v})`, JSON.stringify(x.summary));
