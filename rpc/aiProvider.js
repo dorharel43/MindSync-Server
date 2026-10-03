@@ -533,7 +533,9 @@ async function callOpenRouter({ parts, maxTokens = 2048, forceJson = false, syst
     const body = {
         models,                        // OpenRouter tries these in order
         messages,
-        max_tokens: maxTokens,
+        // (64000: the lowest output ceiling among OPENROUTER_MODELS - Claude
+        // Haiku 4.5. The exam writer asks Gemini for up to 65536.)
+        max_tokens: Math.min(maxTokens, 64000),
         // Reasoning, like Gemini's, is paid from the output budget - keep it
         // at the level the caller asked for, never above.
         reasoning: { effort: thinkingLevel === 'minimal' ? 'low' : thinkingLevel },
