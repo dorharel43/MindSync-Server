@@ -476,36 +476,41 @@ async function measureStructure(out) {
         if (r.check) r.check.summary = summariseCheck(r.check);
         if (r.solve) r.solve.summary = summariseSolve(r.solve);
     };
-    // --resume: a measure rebuilds its list as it goes, so a run stopped half
-    // way (the guard, a crash, the watchdog) would save a shorter list over
-    // the report. Rows of the earlier report not reached this time are kept.
+    // --resume: a measure rebuilds its list as it goes, so a measure stopped
+    // half way (the guard, a crash, the watchdog) would save a shorter list
+    // over the report. Then - only then - rows of the earlier report it didn't
+    // reach are kept. (A measure that finished drops rows now out of scope, as before.)
     const keepEarlier = (now, earlier, key) => {
         if (!Array.isArray(now) || !Array.isArray(earlier)) return;
         const have = new Set(now.map(key));
         for (const r of earlier) if (!have.has(key(r))) now.push(r);
     };
-    const carryOver = () => {
+    const carryOver = (m) => {
         const r = report.results;
-        if (r.check && r.check !== PREV.check) keepEarlier(r.check.exams, (PREV.check || {}).exams, x => x.exam);
-        if (r.solve && r.solve !== PREV.solve) keepEarlier(r.solve.exams, (PREV.solve || {}).exams, x => x.exam);
-        if (r.structure && r.structure !== PREV.structure) keepEarlier(r.structure.courses, (PREV.structure || {}).courses, x => x.course);
-        if (r.grading && r.grading !== PREV.grading && r.grading.variants) {
+        if (m === 'check' && r.check && r.check !== PREV.check) keepEarlier(r.check.exams, (PREV.check || {}).exams, x => x.exam);
+        if (m === 'solve' && r.solve && r.solve !== PREV.solve) keepEarlier(r.solve.exams, (PREV.solve || {}).exams, x => x.exam);
+        if (m === 'structure' && r.structure && r.structure !== PREV.structure) keepEarlier(r.structure.courses, (PREV.structure || {}).courses, x => x.course);
+        if (m === 'grading' && r.grading && r.grading !== PREV.grading && r.grading.variants) {
             for (const [v, x] of Object.entries(r.grading.variants)) keepEarlier(x.rows, ((((PREV.grading || {}).variants || {})[v]) || {}).rows, y => y.id);
         }
     };
     guard.onExit(() => {   // a stuck run still keeps what it measured - and says so
         report.stopped = report.stopped || guard.stopped();
         report.runs.push({ at: report.ranAt, calls: guard.stats().calls, stopped: report.stopped, watchdog: true });
+        if (running) carryOver(running);
         save();
     });
-    const save = () => { carryOver(); summarise(); report.calls = (before && before.calls || 0) + guard.stats().calls; fs.writeFileSync(OUT, JSON.stringify(report, null, 1)); };
+    let running = null;   // the measure in progress
+    const save = () => { summarise(); report.calls = (before && before.calls || 0) + guard.stats().calls; fs.writeFileSync(OUT, JSON.stringify(report, null, 1)); };
     const t0 = Date.now();
     try {
         for (const m of MEASURES) {
             const fn = { grading: measureGrading, check: measureCheck, solve: measureSolve, structure: measureStructure }[m];
             if (!fn) { console.warn(`unknown measure: ${m}`); continue; }
             report.results[m] = {};
-            try { await fn(report.results[m]); } finally { save(); }
+            running = m;
+            let finished = false;
+            try { await fn(report.results[m]); finished = true; } finally { if (!finished) carryOver(m); running = null; save(); }
         }
     } catch (err) {
         report.stopped = err.message;
