@@ -626,6 +626,13 @@ async function callOpenRouter({ parts, maxTokens = 2048, forceJson = false, syst
     const content = choice?.message?.content;
     const text = (Array.isArray(content) ? content.map(c => c.text || '').join('') : String(content || '')).trim();
     const usage = data?.usage || {};
+    // (completion_tokens includes the reasoning tokens)
+    const reasoning = usage.completion_tokens_details?.reasoning_tokens || 0;
+    reportUsage({
+        model: data?.model || models[0], seconds: (Date.now() - started) / 1000,
+        finish: choice?.finish_reason === 'length' ? 'MAX_TOKENS' : choice?.finish_reason,
+        input: usage.prompt_tokens || 0, thinking: reasoning, output: Math.max(0, (usage.completion_tokens || 0) - reasoning)
+    });
     console.log(`🤖 OpenRouter (${data?.model || models[0]}) ${((Date.now() - started) / 1000).toFixed(1)}s | in ${usage.prompt_tokens || 0} | out ${usage.completion_tokens || 0} | ${text.length} chars | finish=${choice?.finish_reason}`);
     if (!text) throw new Error(`The backup AI returned an empty response (finish: ${choice?.finish_reason || 'unknown'}).`);
     return { text, model: data?.model || models[0] };

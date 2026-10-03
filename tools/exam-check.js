@@ -64,7 +64,15 @@ const { extractPdfText } = require('../rpc/pdfExtract');
 // tools/ai-guard.js stops the run on a fatal error (spending cap, rejected
 // key, daily quota), repeated failures, or a call / token / time ceiling -
 // and refuses a real key without --approved.
-const guard = require('./ai-guard').create({ maxCalls: MAX_CALLS, label: 'exam-check' }).wrap(aiProvider).announce();
+// (a whole measure takes hours on a slow key: generous time and tokens - the
+// failure and cost stops are what matter; --max-minutes / --max-tokens to change)
+const guard = require('./ai-guard').create({ maxCalls: MAX_CALLS, maxMinutes: 360, maxTokens: 4000000, label: 'exam-check' }).wrap(aiProvider).announce();
+// After a stop, the stages swallow the guard's error (a check "failed", a part
+// "unchecked"): a row measured after the stop is not a result - not kept, so
+// --resume measures it again.
+function keepRow() {
+    if (guard.stopped()) throw new OutOfCalls(`ai-guard stopped the run: ${guard.stopped()}`);
+}
 let lastCallAt = 0;
 const OutOfCalls = require('./ai-guard').GuardStop;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -200,6 +208,7 @@ async function measureGrading(result) {
             const [lo, hi] = c.expectPct;
             const m = median(ps);
             const verdict = m === null ? 'failed' : m < lo ? 'too strict' : m > hi ? 'too lenient' : 'in range';
+            keepRow();
             rows.push({ id: c.id, exam: c.exam, kind: c.kind, expect: c.expectPct, got: ps, median: m, spread: ps.length ? Math.max(...ps) - Math.min(...ps) : null, verdict, marked, apart });
             console.log(`   ${verdict === 'in range' ? '✓' : '✗'} ${c.id.padEnd(28)} ${String(m).padStart(5)}%  [${lo}-${hi}]  runs: ${ps.join(', ')}`);
         }
@@ -277,6 +286,7 @@ async function measureCheck(out) {
                 row.plantedFailed = st.failed;
             } catch (err) { if (err instanceof OutOfCalls) throw err; row.planted = { error: err.message }; }
         }
+        keepRow();
         out.exams.push(row);
         const c = row.clean || {};
         const caught = Array.isArray(row.planted) ? row.planted.filter(x => x.caught).length : 0;
@@ -362,6 +372,7 @@ async function measureSolve(out) {
                 });
             }
         } catch (err) { if (err instanceof OutOfCalls) throw err; row.error = err.message; }
+        keepRow();
         out.exams.push(row);
         const ok = row.parts.filter(p => p.rightAfter === true).length;
         console.log(`   ${id.padEnd(22)} ${row.error ? 'ERROR ' + row.error : `right after check ${ok}/${row.parts.length}`}`);
@@ -447,6 +458,7 @@ async function measureStructure(out) {
             row.topics = { generated: [...new Set(exam.questions.flatMap(q => q.parts.map(p => p.topic)))], real: [...new Set(goldQs.flatMap(q => q.parts.map(p => p.topic)))] };
             row.exam = exam;
         } catch (err) { if (err instanceof OutOfCalls) throw err; row.error = err.message; }
+        keepRow();
         out.courses.push(row);
         console.log(`   ${course.padEnd(8)} ${row.error ? 'ERROR ' + row.error : `questions ${row.generated.questions}/${row.real.questions}  points ${row.match.samePoints}  shapes ${row.match.sameShape}  choose ${row.match.sameChoose}  copies ${row.copies.length}`}`);
     }
@@ -464,6 +476,7 @@ async function measureStructure(out) {
         if (r.check) r.check.summary = summariseCheck(r.check);
         if (r.solve) r.solve.summary = summariseSolve(r.solve);
     };
+    guard.onExit(() => save());   // a stuck run still keeps what it measured
     const save = () => { summarise(); report.calls = (before && before.calls || 0) + guard.stats().calls; fs.writeFileSync(OUT, JSON.stringify(report, null, 1)); };
     const t0 = Date.now();
     try {

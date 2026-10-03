@@ -10,15 +10,17 @@
 //   guard.itemOk();
 //
 // It stops the run (every later call throws GuardStop) when:
-//   - the key isn't approved: a real key needs --approved or AI_GUARD_APPROVED=1
-//     (a fake Gemini - GEMINI_BASE_URL - doesn't);
+//   - the run isn't approved: a real key needs --approved or AI_GUARD_APPROVED=1.
+//     Only a fake Gemini (GEMINI_BASE_URL, not Google's host) with no
+//     OpenRouter key is free - OpenRouter is a real, paid vendor either way;
 //   - a call fails in a way that won't pass by itself: the monthly spending
 //     cap, a rejected key, the day's quota;
 //   - the same failure comes back --max-same times, or --max-failures calls
 //     or items in a row fail (a cut-off answer counts: the tokens were spent);
 //   - --max-calls calls, --max-tokens tokens (input + thinking + output) or
-//     --max-minutes minutes are used up. Past the minutes plus 2, a stuck call
-//     ends the process.
+//     --max-minutes minutes are used up. Past the minutes plus 12 (a single
+//     call may take 10 - a 5-minute timeout, retried once), a stuck call ends
+//     the process - after the tool's onExit (e.g. saving its report).
 // A summary (calls, tokens, failures, why it stopped) is printed at exit.
 //
 // Limits come from the command line (--max-calls 30 --max-tokens 600000
@@ -65,13 +67,17 @@ function create(options = {}) {
         maxBusy: o('maxBusy', 'max-busy', 6)
     };
     const label = options.label || require('path').basename(process.argv[1] || 'ai tool');
-    const fake = !!process.env.GEMINI_BASE_URL || !!process.env.MINDSYNC_TEST_GEMINI_URL;
-    const approved = fake || options.approved === true || argValue('approved') === true || process.env.AI_GUARD_APPROVED === '1';
+    // The tools run the SERVER's rpc/aiProvider.js, which reads GEMINI_BASE_URL
+    // only (the desktop app's MINDSYNC_TEST_GEMINI_URL doesn't count here).
+    const base = String(process.env.GEMINI_BASE_URL || '');
+    const fake = !!base && !/googleapis\.com/i.test(base) && !process.env.OPENROUTER_API_KEY;
+    const approved = fake || options.approved === true || process.argv.includes('--approved') || process.env.AI_GUARD_APPROVED === '1';
 
     const startedAt = Date.now();
     const state = {
         calls: 0, input: 0, thinking: 0, output: 0, cutOff: 0,
-        failures: 0, inARow: 0, itemsInARow: 0, busyInARow: 0, same: new Map(), stopped: null
+        failures: 0, inARow: 0, itemsInARow: 0, busyInARow: 0, same: new Map(), stopped: null,
+        lastCallFailure: null   // the last call's failure, until a call succeeds
     };
     const tokens = () => state.input + state.thinking + state.output;
     const minutes = () => (Date.now() - startedAt) / 60000;
@@ -87,11 +93,18 @@ function create(options = {}) {
     // GuardStop when it's one too many. The streaks are kept apart: a call
     // that "worked" but returned nothing usable mustn't reset the items'.
     function failed(message, item = false) {
-        state.failures += 1;
-        if (item) state.itemsInARow += 1; else state.inARow += 1;
         const sig = signature(message);
-        const seen = (state.same.get(sig) || 0) + 1;
-        state.same.set(sig, seen);
+        // An item that failed BECAUSE its call failed (the same message) is one
+        // failure, not two: it adds to the items' streak only.
+        const sameAsCall = item && state.lastCallFailure === sig;
+        if (item) state.itemsInARow += 1; else state.inARow += 1;
+        if (!item) { state.lastCallFailure = sig; state.busyInARow = 0; }
+        let seen = state.same.get(sig) || 0;
+        if (!sameAsCall) {
+            state.failures += 1;
+            seen += 1;
+            state.same.set(sig, seen);
+        }
         if (seen >= limits.maxSame) return stop(`the same failure ${seen} times: "${sig}"`);
         const inARow = item ? state.itemsInARow : state.inARow;
         if (inARow >= limits.maxFailures) return stop(`${inARow} failures in a row (last: "${sig}")`);
@@ -131,6 +144,7 @@ function create(options = {}) {
                         if (s) throw s;
                     } else {
                         state.inARow = 0;
+                        state.lastCallFailure = null;
                     }
                     state.busyInARow = 0;
                     return result;
@@ -140,6 +154,7 @@ function create(options = {}) {
                     if (fatal) throw stop(fatal);
                     if (isBusy(err)) {
                         state.busyInARow += 1;
+                        state.lastCallFailure = signature(err.message);
                         if (state.busyInARow >= limits.maxBusy) throw stop(`Google busy or rate-limited ${state.busyInARow} times in a row (last: ${err.message})`);
                         throw err;   // the tool may wait and retry - each retry passes here again
                     }
@@ -161,12 +176,16 @@ function create(options = {}) {
         return lines.join('\n');
     }
 
-    // Past the time limit a call can still hang (a stalled connection):
-    // two minutes more, then the process ends - with the summary.
+    // Past the time limit a call can still hang (a stalled connection): 12
+    // minutes more (longer than any single call), then the process ends -
+    // after the tool's onExit, then the summary.
+    const GRACE_MIN = 12;
+    let onExit = typeof options.onExit === 'function' ? options.onExit : null;
     const watchdog = setTimeout(() => {
-        stop(`still running ${limits.maxMinutes + 2} minutes in - a call is stuck`);
+        stop(`still running ${limits.maxMinutes + GRACE_MIN} minutes in - a call is stuck`);
+        try { if (onExit) onExit(); } catch (e) { console.error('ai-guard: onExit failed:', e.message); }
         process.exit(3);
-    }, (limits.maxMinutes + 2) * 60000);
+    }, (limits.maxMinutes + GRACE_MIN) * 60000);
     watchdog.unref();
     process.on('exit', () => console.log('\n' + summary()));
 
@@ -177,6 +196,8 @@ function create(options = {}) {
         itemFailed(message) { const s = failed(message, true); if (s) throw s; },
         itemOk() { state.itemsInARow = 0; },
         isStop: (err) => !!(err && err.guardStop),
+        // Run before the watchdog ends a stuck process (e.g. save the report).
+        onExit(fn) { onExit = fn; return guard; },
         stopped: () => state.stopped,
         stats: () => ({ calls: state.calls, tokens: tokens(), input: state.input, thinking: state.thinking, output: state.output, failures: state.failures, cutOff: state.cutOff, minutes: minutes(), stopped: state.stopped }),
         summary,
@@ -184,10 +205,10 @@ function create(options = {}) {
         approved,
         // Prints what the run may spend; exits before any call when a real key isn't approved.
         announce() {
-            console.log(`ai-guard (${label}): ${fake ? 'fake Gemini' : 'REAL key'} - at most ${limits.maxCalls} calls, ${limits.maxTokens} tokens, ${limits.maxMinutes} min; ` +
+            console.log(`ai-guard (${label}): ${fake ? 'fake Gemini' : 'REAL key (Gemini or OpenRouter)'} - at most ${limits.maxCalls} calls, ${limits.maxTokens} tokens, ${limits.maxMinutes} min; ` +
                 `stops after ${limits.maxFailures} failures in a row or the same one ${limits.maxSame} times.`);
             if (!approved) {
-                console.error('Not approved: this run uses the real key (it costs money). Ask first, then re-run with --approved.');
+                console.error('Not approved: this run can reach a real, paid AI (a real Gemini key, or OpenRouter). Ask first, then re-run with --approved.');
                 process.exit(2);
             }
             return guard;
