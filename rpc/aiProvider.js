@@ -189,11 +189,26 @@ const GEMINI_BASE = process.env.GEMINI_BASE_URL || 'https://generativelanguage.g
 // enough for a slow PDF/vision call but still finite.
 const GEMINI_TIMEOUT_MS = 90000;
 
+// Token counts of every answered Gemini call, for whoever listens - the
+// owner's test tools (tools/ai-guard.js) stop a run at a token ceiling.
+// Nothing listens in the running server.
+const usageListeners = new Set();
+function onUsage(fn) {
+    usageListeners.add(fn);
+    return () => usageListeners.delete(fn);
+}
+function reportUsage(u) {
+    for (const fn of usageListeners) {
+        try { fn(u); } catch (e) { /* a listener's bug never fails the call */ }
+    }
+}
+
 // An Error that also says what KIND of failure it was, so the retry logic
 // below can tell "Google is busy, try again" from "your key is wrong".
 function geminiError(message, fields = {}) {
     return Object.assign(new Error(message), fields);
 }
+const SPENDING_CAP_MESSAGE = "The AI isn't available right now: this month's AI budget is used up. Try again later.";
 
 // When a free key's DAILY quota resets: midnight US Pacific time, whatever
 // the user's own time zone. Returned as a timestamp.
@@ -324,7 +339,7 @@ async function callGemini({ apiKey, model, parts, maxTokens = 2048, forceJson = 
             if (/^AIza/.test(apiKey)) {
                 throw geminiError('This is an older "AIza" standard key. Google stopped accepting those in September 2026 — create a new key at aistudio.google.com/apikey and it will be issued in the current "AQ." format.', { status: res.status });
             }
-            throw geminiError(`Google rejected the key: ${msg}`, { status: res.status });
+            throw geminiError(`Google rejected the key: ${msg}`, { status: res.status, badKey: true });
         }
         if (res.status === 429) {
             // Either a short per-minute limit (Google says how long to wait)
@@ -336,6 +351,14 @@ async function callGemini({ apiKey, model, parts, maxTokens = 2048, forceJson = 
             // seconds of waiting on every action, all day, for a quota that
             // only comes back at midnight Pacific time. Daily = no retry, and
             // the model is skipped until the reset (see callGeminiResilient).
+            // The project's monthly spending cap (a paid key with a budget
+            // set in AI Studio) - also a 429, but nothing comes back in a
+            // minute: every model runs on the same project and budget, so
+            // retrying or switching model only adds failed calls.
+            if (/spending cap/i.test(msg)) {
+                throw geminiError(SPENDING_CAP_MESSAGE,
+                    { status: 429, spendingCap: true, retryable: false });
+            }
             const quota = parseQuotaFailure(data, msg);
             if (quota.daily) {
                 const resetAt = nextPacificMidnight();
@@ -382,6 +405,10 @@ async function callGemini({ apiKey, model, parts, maxTokens = 2048, forceJson = 
     if (finish === 'MAX_TOKENS') {
         console.warn('⚠️ Response was cut off by the token limit - raise maxOutputTokens.');
     }
+    reportUsage({
+        model, seconds: (Date.now() - started) / 1000, finish,
+        input: usage.promptTokenCount || 0, thinking: usage.thoughtsTokenCount || 0, output: usage.candidatesTokenCount || 0
+    });
 
     if (!text) {
         const reason = data?.candidates?.[0]?.finishReason;
@@ -436,8 +463,23 @@ async function callGeminiWithRetry(opts, delays = RETRY_DELAYS_MS) {
 // Models whose daily quota ran out -> when it comes back. Skipped until
 // then, instead of asking Google (and waiting) again on every action.
 const dailyQuotaUntil = {};
+// The monthly spending cap: one budget for the whole project, so no Gemini
+// model is asked until this time (a few minutes - the owner may raise the
+// cap) instead of every action failing at Google again.
+const SPENDING_CAP_PAUSE_MS = 10 * 60 * 1000;
+let spendingCapUntil = 0;
+function checkSpendingCapPause() {
+    if (spendingCapUntil > Date.now()) {
+        throw geminiError(SPENDING_CAP_MESSAGE,
+            { status: 429, spendingCap: true, retryable: false });
+    }
+}
+function noteSpendingCap(err) {
+    if (err && err.spendingCap) spendingCapUntil = Date.now() + SPENDING_CAP_PAUSE_MS;
+}
 
 async function callGeminiResilient(opts) {
+    checkSpendingCapPause();
     const chain = [opts.model];
     if (opts.model !== DEFAULT_GEMINI_MODEL) chain.push(DEFAULT_GEMINI_MODEL);
     if (!chain.includes(FALLBACK_GEMINI_MODEL)) chain.push(FALLBACK_GEMINI_MODEL);
@@ -461,6 +503,8 @@ async function callGeminiResilient(opts) {
             if (i > 0) console.warn(`↪️ Answered by fallback ${model} (${chain[0]} unavailable)`);
             return { text, model };
         } catch (err) {
+            // The budget is the project's, not the model's: no model can answer.
+            if (err.spendingCap) { noteSpendingCap(err); throw err; }
             if (!firstErr) firstErr = err;
             lastErr = err;
             if (err.dailyQuota) dailyQuotaUntil[model] = err.resetAt;
@@ -582,6 +626,13 @@ async function callOpenRouter({ parts, maxTokens = 2048, forceJson = false, syst
     const content = choice?.message?.content;
     const text = (Array.isArray(content) ? content.map(c => c.text || '').join('') : String(content || '')).trim();
     const usage = data?.usage || {};
+    // (completion_tokens includes the reasoning tokens)
+    const reasoning = usage.completion_tokens_details?.reasoning_tokens || 0;
+    reportUsage({
+        model: data?.model || models[0], seconds: (Date.now() - started) / 1000,
+        finish: choice?.finish_reason === 'length' ? 'MAX_TOKENS' : choice?.finish_reason,
+        input: usage.prompt_tokens || 0, thinking: reasoning, output: Math.max(0, (usage.completion_tokens || 0) - reasoning)
+    });
     console.log(`🤖 OpenRouter (${data?.model || models[0]}) ${((Date.now() - started) / 1000).toFixed(1)}s | in ${usage.prompt_tokens || 0} | out ${usage.completion_tokens || 0} | ${text.length} chars | finish=${choice?.finish_reason}`);
     if (!text) throw new Error(`The backup AI returned an empty response (finish: ${choice?.finish_reason || 'unknown'}).`);
     return { text, model: data?.model || models[0] };
@@ -603,8 +654,11 @@ async function callResilient(opts) {
             return callOpenRouter({ ...opts, models: [only.slice('openrouter:'.length)] });
         }
         if (!cfg.geminiKey) throw new Error('No Gemini key is configured on the server.');
-        const text = await callGeminiWithRetry({ ...opts, apiKey: cfg.geminiKey, model: only }, [2000]);
-        return { text, model: only };
+        checkSpendingCapPause();
+        try {
+            const text = await callGeminiWithRetry({ ...opts, apiKey: cfg.geminiKey, model: only }, [2000]);
+            return { text, model: only };
+        } catch (err) { noteSpendingCap(err); throw err; }
     }
     if (!cfg.geminiKey) {
         if (haveOpenRouter) return callOpenRouter(opts);
@@ -802,6 +856,8 @@ async function testGeminiKey(apiKey, model = DEFAULT_GEMINI_MODEL) {
             maxTokens: 512,
             thinkingLevel: 'low'
         });
+        // The key in use answers again (the spending cap was raised): no pause.
+        if (key === readConfig().geminiKey) spendingCapUntil = 0;
         return { ok: true, reply: text.slice(0, 40) };
     } catch (err) {
         console.error('🔑 Key test failed:', err.message);
@@ -859,6 +915,7 @@ module.exports = {
     generateFromPdf: generateFromPdfCounted,
     generateFromImages: generateFromImagesCounted,
     testGeminiKey,
+    onUsage,
     supportsVision: () => resolveProvider() === 'gemini',
     activeGeminiModel: () => activeGeminiModel(readConfig()),
     modelLabel,

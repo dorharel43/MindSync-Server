@@ -6,7 +6,7 @@
 //
 //   GEMINI_API_KEY=... node tools/exam-check.js --set ../mindsync-quality-data \
 //       --measure grading,check,solve,structure [--model gemini-3.8-flash] \
-//       [--repeat 3] [--max-calls 150] [--gap-ms 4000] [--only calc2] \
+//       [--repeat 3] [--max-calls 150] [--gap-ms 4000] [--only calc2] --approved \
 //       [--holdout] [--out report.json] [--resume report.json] [--variants gold-rubric]
 //
 // Measures (see PLAN.md in the gold set):
@@ -23,6 +23,8 @@
 // Nothing is saved anywhere and no user's allowance is touched. A run stops
 // at --max-calls AI calls (the free tier's limits), waits --gap-ms between
 // calls, and waits out "slow down" (429) and "busy" (503) up to 5 times.
+// tools/ai-guard.js guards it: a real key needs --approved, and the run stops
+// on the spending cap, repeated failures, --max-tokens or --max-minutes.
 const fs = require('fs');
 const path = require('path');
 
@@ -58,29 +60,37 @@ const aiProvider = require('../rpc/aiProvider');
 const { examStages: S } = require('../rpc/handlers');
 const { extractPdfText } = require('../rpc/pdfExtract');
 
-// ---- AI calls: counted, spaced, 429s waited out ---------------------------
-let calls = 0;
+// ---- AI calls: guarded, spaced, 429s waited out ---------------------------
+// tools/ai-guard.js stops the run on a fatal error (spending cap, rejected
+// key, daily quota), repeated failures, or a call / token / time ceiling -
+// and refuses a real key without --approved.
+// (a whole measure takes hours on a slow key: generous time and tokens - the
+// failure and cost stops are what matter; --max-minutes / --max-tokens to change)
+const guard = require('./ai-guard').create({ maxCalls: MAX_CALLS, maxMinutes: 360, maxTokens: 4000000, label: 'exam-check' }).wrap(aiProvider).announce();
+// After a stop, the stages swallow the guard's error (a check "failed", a part
+// "unchecked"): a row measured after the stop is not a result - not kept, so
+// --resume measures it again.
+function keepRow() {
+    if (guard.stopped()) throw new OutOfCalls(`ai-guard stopped the run: ${guard.stopped()}`);
+}
 let lastCallAt = 0;
-class OutOfCalls extends Error {}
+const OutOfCalls = require('./ai-guard').GuardStop;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 for (const name of ['generateText', 'generateFromPdf']) {
-    const real = aiProvider[name].bind(aiProvider);
+    const guarded = aiProvider[name];
     aiProvider[name] = async (...a) => {
         for (let attempt = 0; ; attempt++) {
-            if (calls >= MAX_CALLS) throw new OutOfCalls(`stopped at --max-calls ${MAX_CALLS}`);
             const wait = lastCallAt + GAP_MS - Date.now();
             if (wait > 0) await sleep(wait);
-            calls += 1;
             lastCallAt = Date.now();
             try {
-                return await real(...a);
+                return await guarded(...a);
             } catch (err) {
                 if (err instanceof OutOfCalls) throw err;
                 // 429 = too many calls for the free tier; 503 = the model is
                 // busy (common on the free tier). Both pass - wait and retry.
-                const limited = err.status === 429 || /\b429\b|quota|rate limit/i.test(err.message);
+                const limited = err.status === 429 || /\b429\b|rate limit/i.test(err.message);
                 const busy = err.status === 503 || err.overloaded || /\b503\b|busy|overloaded|high demand/i.test(err.message);
-                if (err.dailyQuota) throw new OutOfCalls(`the key's daily quota ran out (${err.message})`);
                 if ((!limited && !busy) || attempt >= 5) throw err;
                 const ms = limited ? Math.max(err.retryAfterMs || 0, 30000) : 15000 * 2 ** Math.min(attempt, 3);
                 console.warn(`   ⏳ ${limited ? 'rate limited' : 'model busy'} - waiting ${Math.round(ms / 1000)}s`);
@@ -198,6 +208,7 @@ async function measureGrading(result) {
             const [lo, hi] = c.expectPct;
             const m = median(ps);
             const verdict = m === null ? 'failed' : m < lo ? 'too strict' : m > hi ? 'too lenient' : 'in range';
+            keepRow();
             rows.push({ id: c.id, exam: c.exam, kind: c.kind, expect: c.expectPct, got: ps, median: m, spread: ps.length ? Math.max(...ps) - Math.min(...ps) : null, verdict, marked, apart });
             console.log(`   ${verdict === 'in range' ? '✓' : '✗'} ${c.id.padEnd(28)} ${String(m).padStart(5)}%  [${lo}-${hi}]  runs: ${ps.join(', ')}`);
         }
@@ -275,6 +286,7 @@ async function measureCheck(out) {
                 row.plantedFailed = st.failed;
             } catch (err) { if (err instanceof OutOfCalls) throw err; row.planted = { error: err.message }; }
         }
+        keepRow();
         out.exams.push(row);
         const c = row.clean || {};
         const caught = Array.isArray(row.planted) ? row.planted.filter(x => x.caught).length : 0;
@@ -360,6 +372,7 @@ async function measureSolve(out) {
                 });
             }
         } catch (err) { if (err instanceof OutOfCalls) throw err; row.error = err.message; }
+        keepRow();
         out.exams.push(row);
         const ok = row.parts.filter(p => p.rightAfter === true).length;
         console.log(`   ${id.padEnd(22)} ${row.error ? 'ERROR ' + row.error : `right after check ${ok}/${row.parts.length}`}`);
@@ -445,6 +458,7 @@ async function measureStructure(out) {
             row.topics = { generated: [...new Set(exam.questions.flatMap(q => q.parts.map(p => p.topic)))], real: [...new Set(goldQs.flatMap(q => q.parts.map(p => p.topic)))] };
             row.exam = exam;
         } catch (err) { if (err instanceof OutOfCalls) throw err; row.error = err.message; }
+        keepRow();
         out.courses.push(row);
         console.log(`   ${course.padEnd(8)} ${row.error ? 'ERROR ' + row.error : `questions ${row.generated.questions}/${row.real.questions}  points ${row.match.samePoints}  shapes ${row.match.sameShape}  choose ${row.match.sameChoose}  copies ${row.copies.length}`}`);
     }
@@ -462,14 +476,41 @@ async function measureStructure(out) {
         if (r.check) r.check.summary = summariseCheck(r.check);
         if (r.solve) r.solve.summary = summariseSolve(r.solve);
     };
-    const save = () => { summarise(); report.calls = (before && before.calls || 0) + calls; fs.writeFileSync(OUT, JSON.stringify(report, null, 1)); };
+    // --resume: a measure rebuilds its list as it goes, so a measure stopped
+    // half way (the guard, a crash, the watchdog) would save a shorter list
+    // over the report. Then - only then - rows of the earlier report it didn't
+    // reach are kept. (A measure that finished drops rows now out of scope, as before.)
+    const keepEarlier = (now, earlier, key) => {
+        if (!Array.isArray(now) || !Array.isArray(earlier)) return;
+        const have = new Set(now.map(key));
+        for (const r of earlier) if (!have.has(key(r))) now.push(r);
+    };
+    const carryOver = (m) => {
+        const r = report.results;
+        if (m === 'check' && r.check && r.check !== PREV.check) keepEarlier(r.check.exams, (PREV.check || {}).exams, x => x.exam);
+        if (m === 'solve' && r.solve && r.solve !== PREV.solve) keepEarlier(r.solve.exams, (PREV.solve || {}).exams, x => x.exam);
+        if (m === 'structure' && r.structure && r.structure !== PREV.structure) keepEarlier(r.structure.courses, (PREV.structure || {}).courses, x => x.course);
+        if (m === 'grading' && r.grading && r.grading !== PREV.grading && r.grading.variants) {
+            for (const [v, x] of Object.entries(r.grading.variants)) keepEarlier(x.rows, ((((PREV.grading || {}).variants || {})[v]) || {}).rows, y => y.id);
+        }
+    };
+    guard.onExit(() => {   // a stuck run still keeps what it measured - and says so
+        report.stopped = report.stopped || guard.stopped();
+        report.runs.push({ at: report.ranAt, calls: guard.stats().calls, stopped: report.stopped, watchdog: true });
+        if (running) carryOver(running);
+        save();
+    });
+    let running = null;   // the measure in progress
+    const save = () => { summarise(); report.calls = (before && before.calls || 0) + guard.stats().calls; fs.writeFileSync(OUT, JSON.stringify(report, null, 1)); };
     const t0 = Date.now();
     try {
         for (const m of MEASURES) {
             const fn = { grading: measureGrading, check: measureCheck, solve: measureSolve, structure: measureStructure }[m];
             if (!fn) { console.warn(`unknown measure: ${m}`); continue; }
             report.results[m] = {};
-            try { await fn(report.results[m]); } finally { save(); }
+            running = m;
+            let finished = false;
+            try { await fn(report.results[m]); finished = true; } finally { if (!finished) carryOver(m); running = null; save(); }
         }
     } catch (err) {
         report.stopped = err.message;
@@ -478,10 +519,11 @@ async function measureStructure(out) {
     report.seconds = Math.round((Date.now() - t0) / 1000);
     // Formulas the model wrote this run: kept (KaTeX draws them) / flattened (it couldn't).
     const formulas = S.FORMULA_STATS ? { ...S.FORMULA_STATS } : null;
-    report.runs.push({ at: report.ranAt, calls, seconds: report.seconds, stopped: report.stopped || null, formulas });
+    const used = guard.stats();
+    report.runs.push({ at: report.ranAt, calls: used.calls, tokens: { input: used.input, thinking: used.thinking, output: used.output }, seconds: report.seconds, stopped: report.stopped || guard.stopped() || null, formulas });
     if (formulas) console.log(`formulas: ${formulas.kept} kept, ${formulas.flattened} flattened (couldn't be drawn)`);
     save();
-    console.log(`\n${calls} AI calls, ${report.seconds}s - report: ${OUT}`);
+    console.log(`\n${used.calls} AI calls, ${report.seconds}s - report: ${OUT}`);
     for (const [m, r] of Object.entries(report.results)) {
         if (r.summary) console.log(m, JSON.stringify(r.summary));
         if (r.variants) for (const [v, x] of Object.entries(r.variants)) console.log(`${m} (${v})`, JSON.stringify(x.summary));
