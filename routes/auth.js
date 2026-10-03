@@ -89,6 +89,7 @@ function publicUser(user) {
     return {
         id: user._id, email: user.email, name: user.name, degree: user.degree, guideDone: !!user.guideDone,
         emailVerified: !!user.emailVerified, lang: user.lang || 'en',
+        dailyGoal: user.dailyGoal || User.DEFAULT_DAILY_GOAL,
         // Whether this server can send email at all - the app offers
         // "Resend the confirmation email" only then.
         mailEnabled: mailer.mailEnabled()
@@ -221,7 +222,7 @@ router.get(
     })
 );
 
-// PUT /api/auth/me   { name?, degree?, guideDone? }
+// PUT /api/auth/me   { name?, degree?, guideDone?, lang?, dailyGoal? }
 router.put(
     '/me',
     requireAuth,
@@ -230,12 +231,16 @@ router.put(
         // Only ever a real boolean - anything else is ignored.
         const guideDone = typeof req.body.guideDone === 'boolean' ? req.body.guideDone : undefined;
         const lang = langOf(req.body.lang) || undefined;   // the app's language, for our emails
+        // One of the offered goals only (a number sent as a string counts).
+        const goal = Number(req.body.dailyGoal);
+        const dailyGoal = User.DAILY_GOALS.includes(goal) ? goal : undefined;
+        if (req.body.dailyGoal !== undefined && dailyGoal === undefined) throw new ApiError(400, 'The daily goal is 10, 15, 20 or 30 questions.');
         // Load + save rather than findByIdAndUpdate: same validation, and no
         // projection of the hidden passwordHash in the update (which some
         // Mongo-compatible databases can't do).
         const user = await User.findById(req.userId);
         if (!user) throw new ApiError(404, 'User not found.');
-        Object.entries({ name, degree, guideDone, lang }).forEach(([k, v]) => { if (v !== undefined) user[k] = v; });
+        Object.entries({ name, degree, guideDone, lang, dailyGoal }).forEach(([k, v]) => { if (v !== undefined) user[k] = v; });
         await user.save({ validateModifiedOnly: true });
         res.json(publicUser(user));
     })

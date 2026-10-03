@@ -7,7 +7,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
 const { schedule, calibrationReport, OUTCOME_CORRECT } = require('../utils/scheduler');
-const { todayIso, nextExamByCourse, buildStudyQueue } = require('../utils/examSchedule');
+const { APP_TIME_ZONE, todayIso, nextExamByCourse, buildStudyQueue } = require('../utils/examSchedule');
 const { requireAuth } = require('../middleware/auth');
 
 router.use(requireAuth);
@@ -282,6 +282,9 @@ function findGenuineDifficultyItems(items) {
 // A course's questions under exam conditions: typed answers, the check at the
 // end, one score. The latest score is the course's "if the exam were today".
 const ExamRun = require('../models/ExamRun');
+const FullExamRun = require('../models/FullExamRun');
+const User = require('../models/User');
+const { DEFAULT_DAILY_GOAL } = User;
 // A file that IS a past exam: its questions are the closest thing to the
 // real one, so they come first.
 const PAST_EXAM_FILE = /מבחן|בחינה|מועד|בוחן|\bexams?\b|midterm|quiz|final exam/i;
@@ -473,6 +476,48 @@ router.get(
 );
 
 // GET /api/study/stats - deck overview + calibration
+// When today began on the app's clock (Israel - like the planner's "today").
+function startOfAppDay(now = new Date()) {
+  const clock = (d) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+      timeZone: APP_TIME_ZONE, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    }).formatToParts(d).map(x => [x.type, x.value]));
+    return (Number(p.hour) * 3600 + Number(p.minute) * 60 + Number(p.second)) * 1000;
+  };
+  let start = new Date(now.getTime() - clock(now) - now.getMilliseconds());
+  // On the day the clock moves (daylight saving), that lands an hour off
+  // midnight: 23:00 the day before, or 01:00 - one step fixes it.
+  const off = clock(start);
+  if (off) start = new Date(start.getTime() + (off > 12 * 3600000 ? 86400000 - off : -off));
+  return start;
+}
+
+// GET /api/study/today   (3/10, the daily goal)
+// { answered, goal }: questions answered today - in practice and in mock
+// exams (a mock exam saves each answer as a review too - POST /exam/runs -
+// so the reviews already hold them), and in full exams (each part written,
+// chosen or marked "I don't know"; a full exam saves no reviews). Nothing is
+// counted twice. No streaks: tomorrow starts again from 0, no penalty.
+router.startOfAppDay = startOfAppDay;   // (for tests)
+router.get(
+  '/today',
+  asyncHandler(async (req, res) => {
+    const since = startOfAppDay();
+    const [items, fulls, user] = await Promise.all([
+      StudyItem.find({ userId: req.userId, 'reviews.reviewedAt': { $gte: since } }).select('reviews.reviewedAt').lean(),
+      FullExamRun.find({ userId: req.userId, finishedAt: { $gte: since } }).select('answers').lean(),
+      User.findById(req.userId).select('dailyGoal').lean()
+    ]);
+    let answered = 0;
+    for (const i of items) answered += (i.reviews || []).filter(r => r.reviewedAt && new Date(r.reviewedAt) >= since).length;
+    for (const r of fulls) {
+      answered += (r.answers || []).filter(a => a.status !== 'not_chosen'
+        && (String(a.text || '').trim() || a.choice || a.dontKnow || a.fromPhoto)).length;
+    }
+    res.json({ answered, goal: (user && user.dailyGoal) || DEFAULT_DAILY_GOAL });
+  })
+);
+
 router.get(
   '/stats',
   asyncHandler(async (req, res) => {
