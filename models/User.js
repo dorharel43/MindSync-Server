@@ -4,6 +4,9 @@ const bcrypt = require('bcrypt');
 // One document per person using the app. Replaces the old singleton
 // "Profile" settings document - name/degree live here now, so there's one
 // less collection and one less place they can drift out of sync.
+const DAILY_GOALS = [10, 15, 20, 30];
+const DEFAULT_DAILY_GOAL = 15;
+
 const userSchema = new mongoose.Schema({
     email: {
         type: String,
@@ -55,7 +58,10 @@ const userSchema = new mongoose.Schema({
     // mailbox is theirs, and confirms it).
     emailVerified: { type: Boolean, default: false },
     // The language the person uses the app in, for the emails we send.
-    lang: { type: String, enum: ['he', 'en'], default: 'en' }
+    lang: { type: String, enum: ['he', 'en'], default: 'en' },
+    // Questions a day (3/10): the daily goal on Study and Home. A number of
+    // questions, not minutes - and no streak: each day starts from 0.
+    dailyGoal: { type: Number, enum: DAILY_GOALS, default: DEFAULT_DAILY_GOAL }
 }, {
     timestamps: true
 });
@@ -74,3 +80,5 @@ userSchema.methods.checkPassword = function (plainPassword) {
 };
 
 module.exports = mongoose.model('User', userSchema);
+module.exports.DAILY_GOALS = DAILY_GOALS;
+module.exports.DEFAULT_DAILY_GOAL = DEFAULT_DAILY_GOAL;

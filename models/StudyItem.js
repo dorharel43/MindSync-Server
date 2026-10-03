@@ -39,7 +39,11 @@ const reviewSchema = new mongoose.Schema({
     // (1/10): the first time, or a new version. A right answer to the same
     // text again may be a remembered answer - readiness doesn't count it as
     // "known". Missing on older reviews = treated as fresh.
-    fresh: { type: Boolean }
+    fresh: { type: Boolean },
+    // A mock exam's blank answer (skipped or out of time, 3/10): saved as
+    // "I don't know" for the schedule, but not counted as answered for the
+    // daily goal - like a blank part of a full exam.
+    examBlank: { type: Boolean }
 }, { _id: false });
 
 // The next version of a question (1/10): same idea or method, new numbers /

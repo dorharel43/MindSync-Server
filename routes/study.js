@@ -7,7 +7,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
 const { schedule, calibrationReport, OUTCOME_CORRECT } = require('../utils/scheduler');
-const { todayIso, nextExamByCourse, buildStudyQueue } = require('../utils/examSchedule');
+const { APP_TIME_ZONE, todayIso, nextExamByCourse, buildStudyQueue } = require('../utils/examSchedule');
 const { requireAuth } = require('../middleware/auth');
 
 router.use(requireAuth);
@@ -282,6 +282,9 @@ function findGenuineDifficultyItems(items) {
 // A course's questions under exam conditions: typed answers, the check at the
 // end, one score. The latest score is the course's "if the exam were today".
 const ExamRun = require('../models/ExamRun');
+const FullExamRun = require('../models/FullExamRun');
+const User = require('../models/User');
+const { DEFAULT_DAILY_GOAL } = User;
 // A file that IS a past exam: its questions are the closest thing to the
 // real one, so they come first.
 const PAST_EXAM_FILE = /מבחן|בחינה|מועד|בוחן|\bexams?\b|midterm|quiz|final exam/i;
@@ -393,7 +396,7 @@ router.post(
       // aiSuggested stays empty: nobody could overrule the check in an exam,
       // so it would read as "agreed with the AI" on the owner's page.
       try {
-        await recordReview(req.userId, item, { confidence, outcome });
+        await recordReview(req.userId, item, { confidence, outcome, examBlank: a.verdict === 'blank' });
       } catch (err) { console.warn('mock exam: review not saved:', err.message); }
     }
     // History: the last 20 per course.
@@ -473,6 +476,55 @@ router.get(
 );
 
 // GET /api/study/stats - deck overview + calibration
+// When today began on the app's clock (Israel - like the planner's "today").
+function startOfAppDay(now = new Date()) {
+  const clock = (d) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+      timeZone: APP_TIME_ZONE, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    }).formatToParts(d).map(x => [x.type, x.value]));
+    return (Number(p.hour) * 3600 + Number(p.minute) * 60 + Number(p.second)) * 1000;
+  };
+  let start = new Date(now.getTime() - clock(now) - now.getMilliseconds());
+  // On the day the clock moves (daylight saving), that lands an hour off
+  // midnight: 23:00 the day before, or 01:00 - one step fixes it.
+  const off = clock(start);
+  if (off) start = new Date(start.getTime() + (off > 12 * 3600000 ? 86400000 - off : -off));
+  return start;
+}
+
+// GET /api/study/today   (3/10, the daily goal)
+// { answered, goal }: questions answered today - in practice, in mock exams
+// and in full exams. Nothing is counted twice:
+//  - a mock exam saves its checked answers as reviews too (POST /exam/runs),
+//    so they come with the reviews - except its blank ones (skipped or out
+//    of time: marked examBlank), which don't count, as a blank part of a
+//    full exam doesn't; its unchecked ones (no review saved) are added from
+//    the run, as a full exam's unchecked written parts count;
+//  - a full exam saves no reviews: each part written, chosen, "I don't know"
+//    or from a photo counts.
+// No streaks: tomorrow starts again from 0, no penalty.
+router.startOfAppDay = startOfAppDay;   // (for tests)
+router.get(
+  '/today',
+  asyncHandler(async (req, res) => {
+    const since = startOfAppDay();
+    const [items, mocks, fulls, user] = await Promise.all([
+      StudyItem.find({ userId: req.userId, 'reviews.reviewedAt': { $gte: since } }).select('reviews.reviewedAt reviews.examBlank').lean(),
+      ExamRun.find({ userId: req.userId, finishedAt: { $gte: since } }).select('answers.verdict').lean(),
+      FullExamRun.find({ userId: req.userId, finishedAt: { $gte: since } }).select('answers').lean(),
+      User.findById(req.userId).select('dailyGoal').lean()
+    ]);
+    let answered = 0;
+    for (const i of items) answered += (i.reviews || []).filter(r => !r.examBlank && r.reviewedAt && new Date(r.reviewedAt) >= since).length;
+    for (const r of mocks) answered += (r.answers || []).filter(a => a.verdict === 'unchecked').length;
+    for (const r of fulls) {
+      answered += (r.answers || []).filter(a => a.status !== 'not_chosen'
+        && (String(a.text || '').trim() || a.choice || a.dontKnow || a.fromPhoto)).length;
+    }
+    res.json({ answered, goal: (user && user.dailyGoal) || DEFAULT_DAILY_GOAL });
+  })
+);
+
 router.get(
   '/stats',
   asyncHandler(async (req, res) => {
@@ -799,7 +851,7 @@ router.delete(
 // One answer recorded and the question rescheduled - for practice and for
 // mock exams alike (30/9). The course's next exam caps how far away the next
 // review can be.
-async function recordReview(userId, item, { confidence, outcome, aiSuggested = null, clientId, secondsSpent = 0, variantShown = false }) {
+async function recordReview(userId, item, { confidence, outcome, aiSuggested = null, clientId, secondsSpent = 0, variantShown = false, examBlank = false }) {
   // A new version was on screen (1/10): it becomes a past version, and the
   // answer counts as "fresh" - so does the very first answer to a question.
   const shownVariant = variantShown && item.nextVariant && item.nextVariant.question ? item.nextVariant.question : null;
@@ -825,7 +877,8 @@ async function recordReview(userId, item, { confidence, outcome, aiSuggested = n
     clientId: typeof clientId === 'string' ? clientId.slice(0, 40) : undefined,
     secondsSpent: Math.min(Math.max(Number(secondsSpent) || 0, 0), 24 * 3600),
     reviewedAt: new Date(),
-    fresh
+    fresh,
+    ...(examBlank ? { examBlank: true } : {})
   });
   // Keep the recent history only (30/9): answering the same question in a
   // loop used to grow one document without end.
