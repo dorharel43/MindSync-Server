@@ -18,8 +18,8 @@
 //   - the same failure comes back --max-same times, or --max-failures calls
 //     or items in a row fail (a cut-off answer counts: the tokens were spent);
 //   - --max-calls calls, --max-tokens tokens (input + thinking + output) or
-//     --max-minutes minutes are used up. Past the minutes plus 12 (a single
-//     call may take 10 - a 5-minute timeout, retried once), a stuck call ends
+//     --max-minutes minutes are used up. Past the minutes plus 15 (a single
+//     call may take 12 - a 6-minute timeout, retried once), a stuck call ends
 //     the process - after the tool's onExit (e.g. saving its report).
 // A summary (calls, tokens, failures, why it stopped) is printed at exit.
 //
@@ -176,10 +176,10 @@ function create(options = {}) {
         return lines.join('\n');
     }
 
-    // Past the time limit a call can still hang (a stalled connection): 12
+    // Past the time limit a call can still hang (a stalled connection): 15
     // minutes more (longer than any single call), then the process ends -
     // after the tool's onExit, then the summary.
-    const GRACE_MIN = 12;
+    const GRACE_MIN = 15;
     let onExit = typeof options.onExit === 'function' ? options.onExit : null;
     const watchdog = setTimeout(() => {
         stop(`still running ${limits.maxMinutes + GRACE_MIN} minutes in - a call is stuck`);
@@ -203,6 +203,7 @@ function create(options = {}) {
         summary,
         limits,
         approved,
+        fake,
         // Prints what the run may spend; exits before any call when a real key isn't approved.
         announce() {
             console.log(`ai-guard (${label}): ${fake ? 'fake Gemini' : 'REAL key (Gemini or OpenRouter)'} - at most ${limits.maxCalls} calls, ${limits.maxTokens} tokens, ${limits.maxMinutes} min; ` +

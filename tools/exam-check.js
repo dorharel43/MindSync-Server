@@ -476,8 +476,29 @@ async function measureStructure(out) {
         if (r.check) r.check.summary = summariseCheck(r.check);
         if (r.solve) r.solve.summary = summariseSolve(r.solve);
     };
-    guard.onExit(() => save());   // a stuck run still keeps what it measured
-    const save = () => { summarise(); report.calls = (before && before.calls || 0) + guard.stats().calls; fs.writeFileSync(OUT, JSON.stringify(report, null, 1)); };
+    // --resume: a measure rebuilds its list as it goes, so a run stopped half
+    // way (the guard, a crash, the watchdog) would save a shorter list over
+    // the report. Rows of the earlier report not reached this time are kept.
+    const keepEarlier = (now, earlier, key) => {
+        if (!Array.isArray(now) || !Array.isArray(earlier)) return;
+        const have = new Set(now.map(key));
+        for (const r of earlier) if (!have.has(key(r))) now.push(r);
+    };
+    const carryOver = () => {
+        const r = report.results;
+        if (r.check && r.check !== PREV.check) keepEarlier(r.check.exams, (PREV.check || {}).exams, x => x.exam);
+        if (r.solve && r.solve !== PREV.solve) keepEarlier(r.solve.exams, (PREV.solve || {}).exams, x => x.exam);
+        if (r.structure && r.structure !== PREV.structure) keepEarlier(r.structure.courses, (PREV.structure || {}).courses, x => x.course);
+        if (r.grading && r.grading !== PREV.grading && r.grading.variants) {
+            for (const [v, x] of Object.entries(r.grading.variants)) keepEarlier(x.rows, ((((PREV.grading || {}).variants || {})[v]) || {}).rows, y => y.id);
+        }
+    };
+    guard.onExit(() => {   // a stuck run still keeps what it measured - and says so
+        report.stopped = report.stopped || guard.stopped();
+        report.runs.push({ at: report.ranAt, calls: guard.stats().calls, stopped: report.stopped, watchdog: true });
+        save();
+    });
+    const save = () => { carryOver(); summarise(); report.calls = (before && before.calls || 0) + guard.stats().calls; fs.writeFileSync(OUT, JSON.stringify(report, null, 1)); };
     const t0 = Date.now();
     try {
         for (const m of MEASURES) {
