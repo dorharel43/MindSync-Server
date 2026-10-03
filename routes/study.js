@@ -396,7 +396,7 @@ router.post(
       // aiSuggested stays empty: nobody could overrule the check in an exam,
       // so it would read as "agreed with the AI" on the owner's page.
       try {
-        await recordReview(req.userId, item, { confidence, outcome });
+        await recordReview(req.userId, item, { confidence, outcome, examBlank: a.verdict === 'blank' });
       } catch (err) { console.warn('mock exam: review not saved:', err.message); }
     }
     // History: the last 20 per course.
@@ -497,9 +497,9 @@ function startOfAppDay(now = new Date()) {
 // and in full exams. Nothing is counted twice:
 //  - a mock exam saves its checked answers as reviews too (POST /exam/runs),
 //    so they come with the reviews - except its blank ones (skipped or out
-//    of time, saved as "I don't know"), taken off as in a full exam, where a
-//    blank part doesn't count; and its unchecked ones (no review) are added,
-//    as a full exam's unchecked written parts count;
+//    of time: marked examBlank), which don't count, as a blank part of a
+//    full exam doesn't; its unchecked ones (no review saved) are added from
+//    the run, as a full exam's unchecked written parts count;
 //  - a full exam saves no reviews: each part written, chosen, "I don't know"
 //    or from a photo counts.
 // No streaks: tomorrow starts again from 0, no penalty.
@@ -509,20 +509,14 @@ router.get(
   asyncHandler(async (req, res) => {
     const since = startOfAppDay();
     const [items, mocks, fulls, user] = await Promise.all([
-      StudyItem.find({ userId: req.userId, 'reviews.reviewedAt': { $gte: since } }).select('reviews.reviewedAt').lean(),
+      StudyItem.find({ userId: req.userId, 'reviews.reviewedAt': { $gte: since } }).select('reviews.reviewedAt reviews.examBlank').lean(),
       ExamRun.find({ userId: req.userId, finishedAt: { $gte: since } }).select('answers.verdict').lean(),
       FullExamRun.find({ userId: req.userId, finishedAt: { $gte: since } }).select('answers').lean(),
       User.findById(req.userId).select('dailyGoal').lean()
     ]);
     let answered = 0;
-    for (const i of items) answered += (i.reviews || []).filter(r => r.reviewedAt && new Date(r.reviewedAt) >= since).length;
-    for (const r of mocks) {
-      for (const a of r.answers || []) {
-        if (a.verdict === 'blank') answered -= 1;
-        else if (a.verdict === 'unchecked') answered += 1;
-      }
-    }
-    answered = Math.max(0, answered);   // (a blank whose review failed to save)
+    for (const i of items) answered += (i.reviews || []).filter(r => !r.examBlank && r.reviewedAt && new Date(r.reviewedAt) >= since).length;
+    for (const r of mocks) answered += (r.answers || []).filter(a => a.verdict === 'unchecked').length;
     for (const r of fulls) {
       answered += (r.answers || []).filter(a => a.status !== 'not_chosen'
         && (String(a.text || '').trim() || a.choice || a.dontKnow || a.fromPhoto)).length;
@@ -857,7 +851,7 @@ router.delete(
 // One answer recorded and the question rescheduled - for practice and for
 // mock exams alike (30/9). The course's next exam caps how far away the next
 // review can be.
-async function recordReview(userId, item, { confidence, outcome, aiSuggested = null, clientId, secondsSpent = 0, variantShown = false }) {
+async function recordReview(userId, item, { confidence, outcome, aiSuggested = null, clientId, secondsSpent = 0, variantShown = false, examBlank = false }) {
   // A new version was on screen (1/10): it becomes a past version, and the
   // answer counts as "fresh" - so does the very first answer to a question.
   const shownVariant = variantShown && item.nextVariant && item.nextVariant.question ? item.nextVariant.question : null;
@@ -883,7 +877,8 @@ async function recordReview(userId, item, { confidence, outcome, aiSuggested = n
     clientId: typeof clientId === 'string' ? clientId.slice(0, 40) : undefined,
     secondsSpent: Math.min(Math.max(Number(secondsSpent) || 0, 0), 24 * 3600),
     reviewedAt: new Date(),
-    fresh
+    fresh,
+    ...(examBlank ? { examBlank: true } : {})
   });
   // Keep the recent history only (30/9): answering the same question in a
   // loop used to grow one document without end.
