@@ -174,6 +174,8 @@ function readinessOf(items, exam = null, now = Date.now()) {
   // The whole course, unpracticed counting as unknown (kept for older apps).
   r.percent = r.total ? Math.round((credit / r.total) * 100) : 0;
   r.enoughData = enoughPracticed(r.practiced, r.total);
+  // Answers still missing before there is a verdict (Home: "a few more and we'll know").
+  r.toKnow = r.enoughData ? 0 : Math.max(1, Math.min(r.total, 10, Math.max(3, Math.ceil(r.total / 4))) - r.practiced);
 
   // New questions a day to cover the rest before the exam (the exam day
   // itself isn't a study day).
@@ -649,6 +651,14 @@ router.get(
       const runs = await ExamRun.find({ userId: req.userId }).sort({ finishedAt: -1 }).limit(200).select('course score margin checked finishedAt').lean();
       for (const r of runs) if (!lastMock[r.course]) lastMock[r.course] = { score: r.score, margin: r.margin, checked: r.checked, at: r.finishedAt };
     } catch (err) { console.warn('study stats: mock exams skipped:', err.message); }
+    // The last full exam of each course (3/10, Home's readiness) - real
+    // evidence like a mock exam. The daily question is one question, not an exam.
+    const lastFull = {};
+    try {
+      const runs = await FullExamRun.find({ userId: req.userId }).sort({ finishedAt: -1 }).limit(100).select('course examId percent finishedAt').lean();
+      const daily = new Set((await FullExam.find({ userId: req.userId, daily: true, _id: { $in: runs.map(r => r.examId) } }).select('_id').lean()).map(e => String(e._id)));
+      for (const r of runs) if (r.course && !daily.has(String(r.examId)) && !lastFull[r.course]) lastFull[r.course] = { percent: r.percent, at: r.finishedAt };
+    } catch (err) { console.warn('study stats: full exams skipped:', err.message); }
     const subjects = Object.entries(byCategory)
       .map(([name, v]) => {
         const c = plan.byCourse[name] || { dueReviews: 0, newToday: 0, unseen: 0, exam: null };
@@ -662,7 +672,8 @@ router.get(
           neverReviewed: v.neverReviewed,
           // { title, date: 'YYYY-MM-DD', daysLeft } or null
           exam: c.exam || null,
-          lastMock: lastMock[name] || null
+          lastMock: lastMock[name] || null,
+          lastFull: lastFull[name] || null
         };
       })
       .sort((a, b) =>
