@@ -81,8 +81,9 @@ async function pickTarget(userId, examsForCourses) {
   // course has an exam profile; else the weakest skill lately.
   const profile = await CourseProfile.findOne({ userId, course }).lean();
   if (profile) {
-    const best = bestTopic(profile, (byCourse.get(course) || { items: [] }).items);
-    const repeat = best && lastDaily && lastDaily.course === course && lastDaily.topic === best.topic;
+    // (any topic - one with no questions yet is exactly what a new question covers)
+    const best = bestTopic(profile, (byCourse.get(course) || { items: [] }).items, { practicable: false });
+    const repeat = best && lastDaily && lastDaily.course === course && lastDaily.topic === best.topic.slice(0, 120);
     if (best && !repeat) return { course, topic: best.topic, why, accuracy: best.accuracy, exam: exams[course] || null, repeats: { count: best.count, of: best.of } };
   }
   // The weakest skill lately.

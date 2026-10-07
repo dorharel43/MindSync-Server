@@ -32,7 +32,7 @@ router.get(
       profile: profile ? { recurring: profile.recurring, pastExams: profile.pastExams, analyzedAt: profile.analyzedAt, linkedAt: profile.linkedAt } : null,
       topics: topicStats(profile, items),
       needsLink: needsLink(profile, items),
-      skills: profile ? courseSkills(items) : []
+      skills: profile ? courseSkills(items, undefined, new Set(profile.linkedSkills || [])) : []
     });
   })
 );
@@ -57,6 +57,13 @@ router.put(
       })
       .filter(r => r.topic && r.of >= 2 && r.count >= 2);
     const old = await CourseProfile.findOne({ userId: req.userId, course });
+    // Nothing valid: the old analysis stays (an empty one would wipe the map).
+    if (!recurring.length) return res.json({ success: false, kept: !!old, topics: old ? old.recurring.length : 0 });
+    // A full exam built on a few of the files never replaces an analysis of
+    // more of them - only the "Analyze" button does (replace: true).
+    if (old && req.body.replace !== true && (old.pastExams || []).length > pastExams.length) {
+      return res.json({ success: false, kept: true, topics: old.recurring.length });
+    }
     const keep = new Set(recurring.map(r => r.topic));
     const doc = old || new CourseProfile({ userId: req.userId, course });
     doc.recurring = recurring;
@@ -70,6 +77,8 @@ router.put(
 
 // PUT /api/exam-map/links   { course, links: [{ topic, skills }], skills } - the
 // AI's link, kept only where it names real topics and real skills of the course.
+// skills: the ones the call was given - their old links are replaced; the
+// course's other skills (a big course's, beyond one call) keep theirs.
 router.put(
   '/links',
   asyncHandler(async (req, res) => {
@@ -77,7 +86,8 @@ router.put(
     const profile = await CourseProfile.findOne({ userId: req.userId, course });
     if (!profile) throw new ApiError(404, 'No exam profile for this course yet.');
     const items = await courseItems(req.userId, course);
-    const real = new Set(courseSkills(items, 1000));
+    const real = new Set(courseSkills(items, Infinity));
+    const asked = new Set((Array.isArray(req.body.skills) ? req.body.skills : []).map(s => str(s, 120)).filter(s => real.has(s)));
     const topics = new Set(profile.recurring.map(r => r.topic));
     const sent = Array.isArray(req.body.links) ? req.body.links : [];
     const byTopic = new Map();
@@ -85,10 +95,11 @@ router.put(
       const topic = str(l && l.topic, 200);
       if (!topics.has(topic)) continue;
       const skills = (Array.isArray(l.skills) ? l.skills : []).map(s => str(s, 120)).filter(s => real.has(s));
-      byTopic.set(topic, [...new Set([...(byTopic.get(topic) || []), ...skills])].slice(0, 40));
+      byTopic.set(topic, [...new Set([...(byTopic.get(topic) || []), ...skills])]);
     }
-    profile.links = [...topics].map(topic => ({ topic, skills: byTopic.get(topic) || [] }));
-    profile.linkedSkills = (Array.isArray(req.body.skills) ? req.body.skills : []).map(s => str(s, 120)).filter(s => real.has(s)).slice(0, 200);
+    const before = new Map((profile.links || []).map(l => [l.topic, (l.skills || []).filter(s => real.has(s) && !asked.has(s))]));
+    profile.links = [...topics].map(topic => ({ topic, skills: [...new Set([...(byTopic.get(topic) || []), ...(before.get(topic) || [])])] }));
+    profile.linkedSkills = [...new Set([...(profile.linkedSkills || []).filter(s => real.has(s)), ...asked])];
     profile.linkedAt = new Date();
     await profile.save();
     res.json({ success: true, topics: topicStats(profile.toObject(), items) });
