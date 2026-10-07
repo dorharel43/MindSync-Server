@@ -8,7 +8,8 @@ const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../middleware/ApiError');
 const { requireAuth } = require('../middleware/auth');
 const { todayIso } = require('../utils/examSchedule');
-const { countAnsweredToday } = require('../utils/answeredToday');
+const { startOfAppDay, countAnsweredToday } = require('../utils/answeredToday');
+const DailyClaim = require('../models/DailyClaim');
 const { UNLOCK_AFTER, KEEP_DAILY } = require('../utils/dailyQuestion');
 
 router.use(requireAuth);
@@ -182,17 +183,36 @@ router.post(
     if (!data.course) throw new ApiError(400, 'course is required');
     if (!data.questions.length) throw new ApiError(400, 'The exam has no questions.');
     // The daily question (3/10): one question, once a day, after a few answers.
+    let claimId = null;
     if (data.daily) {
       if (data.questions.length !== 1) throw new ApiError(400, 'The daily question is one question.');
       data.dailyDay = todayIso();
-      if (await FullExam.exists({ userId: req.userId, daily: true, dailyDay: data.dailyDay })) {
-        throw new ApiError(409, 'Today\'s question is already written - a new one comes tomorrow.');
-      }
-      if (await countAnsweredToday(req.userId) < UNLOCK_AFTER) {
+      const taken = new ApiError(409, 'Today\'s question is already written - a new one comes tomorrow.');
+      if (await FullExam.exists({ userId: req.userId, daily: true, dailyDay: data.dailyDay })) throw taken;
+      // (a question asked for just before midnight and saved just after: its
+      // answers were yesterday's - for half an hour, those count too)
+      const today = startOfAppDay();
+      const since = Date.now() - today.getTime() < 30 * 60 * 1000 ? startOfAppDay(new Date(today.getTime() - 3600 * 1000)) : today;
+      if (await countAnsweredToday(req.userId, since) < UNLOCK_AFTER) {
         throw new ApiError(403, `Today's question opens after ${UNLOCK_AFTER} answers today.`);
       }
+      // Two saves at the same moment (the app and the website): only one passes.
+      claimId = `${req.userId}:${data.dailyDay}`;
+      try {
+        await DailyClaim.create({ _id: claimId, userId: req.userId, day: data.dailyDay });
+      } catch (err) {
+        if (err && err.code === 11000) throw taken;
+        throw err;
+      }
+      await DailyClaim.deleteMany({ userId: req.userId, day: { $lt: data.dailyDay } }).catch(() => {});
     }
-    const exam = await FullExam.create({ userId: req.userId, ...data });
+    let exam;
+    try {
+      exam = await FullExam.create({ userId: req.userId, ...data });
+    } catch (err) {
+      if (claimId) await DailyClaim.deleteOne({ _id: claimId }).catch(() => {});   // nothing saved: the day is still free
+      throw err;
+    }
     // Keep the newest few per course, and per user (and their sittings) - the
     // daily questions apart, so they never push the full exams out.
     const regular = { userId: req.userId, daily: { $ne: true } };

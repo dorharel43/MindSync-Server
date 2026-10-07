@@ -35,7 +35,9 @@ async function pickTarget(userId, examsForCourses) {
     FileItem.find({ userId }).select('folder').lean(),
     FullExam.findOne({ userId, daily: true }).sort({ createdAt: -1 }).select('course topic').lean()
   ]);
-  const withFiles = new Set(files.map(f => String(f.folder || '').trim()).filter(Boolean));
+  // ('No Folder' is the files not in any course, 'Uncategorized' the questions - not courses)
+  const NOT_A_COURSE = new Set(['', 'No Folder', 'Uncategorized']);
+  const withFiles = new Set(files.map(f => String(f.folder || '').trim()).filter(f => !NOT_A_COURSE.has(f)));
   if (!withFiles.size) return null;
 
   const byCourse = new Map();
@@ -96,8 +98,11 @@ async function pickTarget(userId, examsForCourses) {
     topic = pick.tag;
     accuracyPct = Math.round(pick.acc * 100);
   } else {
-    const run = await FullExamRun.findOne({ userId, course, 'weakTopics.0': { $exists: true } }).sort({ finishedAt: -1 }).select('weakTopics').lean();
-    if (run) topic = String(run.weakTopics[0] || '').slice(0, 120);
+    // The weak topics of the course's last full exams - not the last daily topic again.
+    const runs = await FullExamRun.find({ userId, course, 'weakTopics.0': { $exists: true } }).sort({ finishedAt: -1 }).limit(5).select('weakTopics').lean();
+    const last = lastDaily && lastDaily.course === course ? lastDaily.topic : null;
+    const found = runs.flatMap(r => r.weakTopics || []).find(tp => tp && tp !== last);
+    if (found) topic = String(found).slice(0, 120);
   }
   return { course, topic, why, accuracy: accuracyPct, exam: exams[course] || null };
 }

@@ -495,16 +495,20 @@ router.get(
 // GET /api/study/daily-question   (3/10) - see utils/dailyQuestion.js
 // { state, answered, unlockAt, target: { course, topic, why, accuracy, exam } | null,
 //   exam: { id, title, course, topic } | null, run: { id, percent, score, outOf } | null }
-// state: 'done' (today's is answered), 'written' (waiting to be answered),
-// 'locked' (fewer than unlockAt answers today), 'ready' (can be written),
-// 'none' (no course with files to write it from).
+// state: 'done' (today's is answered), 'written' (waiting to be answered -
+// today's, or the last one, from an earlier day, never answered: it waits
+// until it is), 'locked' (fewer than unlockAt answers today), 'ready' (can be
+// written), 'none' (no course with files to write it from).
 router.get(
   '/daily-question',
   asyncHandler(async (req, res) => {
-    const [answered, exam] = await Promise.all([
+    const [answered, todays, last] = await Promise.all([
       countAnsweredToday(req.userId),
-      FullExam.findOne({ userId: req.userId, daily: true, dailyDay: todayIso() }).select('title course topic').lean()
+      FullExam.findOne({ userId: req.userId, daily: true, dailyDay: todayIso() }).sort({ createdAt: 1 }).select('title course topic').lean(),
+      FullExam.findOne({ userId: req.userId, daily: true }).sort({ createdAt: -1 }).select('title course topic').lean()
     ]);
+    let exam = todays;
+    if (!exam && last && !(await FullExamRun.exists({ userId: req.userId, examId: last._id }))) exam = last;
     const out = { state: 'none', answered, unlockAt: UNLOCK_AFTER, target: null, exam: null, run: null };
     if (exam) {
       out.exam = { id: String(exam._id), title: exam.title, course: exam.course, topic: exam.topic };
