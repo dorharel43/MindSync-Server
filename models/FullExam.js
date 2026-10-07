@@ -76,7 +76,13 @@ const fullExamSchema = new mongoose.Schema({
     handwrittenMarked: { type: Boolean, default: false },
     questions: { type: [questionSchema], default: [] },
     recurring: { type: [recurringSchema], default: [] },             // what repeats in the past exams
-    language: { type: String, maxlength: 10, default: '' }
+    language: { type: String, maxlength: 10, default: '' },
+    // The daily exam question (3/10): one question on the student's weakest
+    // topic, once a day (utils/dailyQuestion.js). dailyDay = the app's day it
+    // was written (YYYY-MM-DD) - one a day; not in the course's exam list.
+    daily: { type: Boolean, default: false },
+    dailyDay: { type: String, maxlength: 10 },
+    topic: { type: String, maxlength: 120, default: '' }
 }, { timestamps: true });
 
 fullExamSchema.index({ userId: 1, course: 1, createdAt: -1 });

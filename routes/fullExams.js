@@ -7,6 +7,9 @@ const FullExamRun = require('../models/FullExamRun');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../middleware/ApiError');
 const { requireAuth } = require('../middleware/auth');
+const { todayIso } = require('../utils/examSchedule');
+const { countAnsweredToday } = require('../utils/answeredToday');
+const { UNLOCK_AFTER, KEEP_DAILY } = require('../utils/dailyQuestion');
 
 router.use(requireAuth);
 
@@ -62,7 +65,9 @@ function cleanExam(b) {
     handwrittenMarked: b.handwrittenMarked === true,
     questions,
     recurring: (Array.isArray(b.recurring) ? b.recurring : []).slice(0, 20).map(r => ({ topic: str(r.topic, 200), count: num(r.count, 0, 50), of: num(r.of, 0, 50), example: str(r.example, 600) })),
-    language: str(b.language, 10)
+    language: str(b.language, 10),
+    daily: b.daily === true,
+    topic: str(b.topic, 120)
   };
 }
 
@@ -176,12 +181,27 @@ router.post(
     const data = cleanExam(req.body || {});
     if (!data.course) throw new ApiError(400, 'course is required');
     if (!data.questions.length) throw new ApiError(400, 'The exam has no questions.');
+    // The daily question (3/10): one question, once a day, after a few answers.
+    if (data.daily) {
+      if (data.questions.length !== 1) throw new ApiError(400, 'The daily question is one question.');
+      data.dailyDay = todayIso();
+      if (await FullExam.exists({ userId: req.userId, daily: true, dailyDay: data.dailyDay })) {
+        throw new ApiError(409, 'Today\'s question is already written - a new one comes tomorrow.');
+      }
+      if (await countAnsweredToday(req.userId) < UNLOCK_AFTER) {
+        throw new ApiError(403, `Today's question opens after ${UNLOCK_AFTER} answers today.`);
+      }
+    }
     const exam = await FullExam.create({ userId: req.userId, ...data });
-    // Keep the newest few per course, and per user (and their sittings).
-    const old = [
-      ...await FullExam.find({ userId: req.userId, course: data.course }).sort({ createdAt: -1 }).skip(KEEP_PER_COURSE).select('_id').lean(),
-      ...await FullExam.find({ userId: req.userId }).sort({ createdAt: -1 }).skip(KEEP_PER_USER).select('_id').lean()
-    ];
+    // Keep the newest few per course, and per user (and their sittings) - the
+    // daily questions apart, so they never push the full exams out.
+    const regular = { userId: req.userId, daily: { $ne: true } };
+    const old = data.daily
+      ? await FullExam.find({ userId: req.userId, daily: true }).sort({ createdAt: -1 }).skip(KEEP_DAILY).select('_id').lean()
+      : [
+        ...await FullExam.find({ ...regular, course: data.course }).sort({ createdAt: -1 }).skip(KEEP_PER_COURSE).select('_id').lean(),
+        ...await FullExam.find(regular).sort({ createdAt: -1 }).skip(KEEP_PER_USER).select('_id').lean()
+      ];
     if (old.length) {
       const ids = old.map(o => o._id);
       await FullExam.deleteMany({ _id: { $in: ids }, userId: req.userId });
@@ -195,7 +215,8 @@ router.post(
 router.get(
   '/',
   asyncHandler(async (req, res) => {
-    const filter = { userId: req.userId };
+    // (the daily questions aren't in the list - the Study screen has today's)
+    const filter = { userId: req.userId, daily: { $ne: true } };
     if (req.query.course) filter.course = String(req.query.course);
     const exams = await FullExam.find(filter).sort({ createdAt: -1 }).limit(40)
       .select('course title basis durationMin totalPoints createdAt questions.n').lean();
