@@ -11,6 +11,8 @@ const { todayIso, nextExamByCourse, buildStudyQueue } = require('../utils/examSc
 const { startOfAppDay, countAnsweredToday } = require('../utils/answeredToday');
 const { pickTarget, UNLOCK_AFTER } = require('../utils/dailyQuestion');
 const FullExam = require('../models/FullExam');
+const CourseProfile = require('../models/CourseProfile');
+const { bestTopic } = require('../utils/examMap');
 const FullExamRun = require('../models/FullExamRun');
 const { requireAuth } = require('../middleware/auth');
 
@@ -666,6 +668,11 @@ router.get(
         lastFull[r.course] = { percent: r.percent, at: r.finishedAt };
       }
     } catch (err) { console.warn('study stats: full exams skipped:', err.message); }
+    // "What repeats in the exam" (3/10): each course's best topic to practise today.
+    const profiles = new Map();
+    try {
+      for (const p of await CourseProfile.find({ userId: req.userId }).lean()) profiles.set(p.course, p);
+    } catch (err) { console.warn('study stats: exam profiles skipped:', err.message); }
     const subjects = Object.entries(byCategory)
       .map(([name, v]) => {
         const c = plan.byCourse[name] || { dueReviews: 0, newToday: 0, unseen: 0, exam: null };
@@ -680,7 +687,8 @@ router.get(
           // { title, date: 'YYYY-MM-DD', daysLeft } or null
           exam: c.exam || null,
           lastMock: lastMock[name] || null,
-          lastFull: lastFull[name] || null
+          lastFull: lastFull[name] || null,
+          topTopic: profiles.has(name) ? bestTopic(profiles.get(name), itemsByCourse.get(name) || []) : null
         };
       })
       .sort((a, b) =>

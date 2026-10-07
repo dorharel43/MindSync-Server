@@ -5,7 +5,7 @@
 const User = require('../models/User');
 const { forgetUser } = require('../middleware/auth');
 
-const MODELS = ['Task', 'Event', 'Folder', 'FileItem', 'StudyItem', 'AiUsage', 'Feedback', 'GoogleLink', 'Settings', 'ActiveDay', 'ExamRun', 'FullExam', 'FullExamRun', 'DailyClaim'];
+const MODELS = ['Task', 'Event', 'Folder', 'FileItem', 'StudyItem', 'AiUsage', 'Feedback', 'GoogleLink', 'Settings', 'ActiveDay', 'ExamRun', 'FullExam', 'FullExamRun', 'DailyClaim', 'CourseProfile'];
 
 async function deleteAccount(userId, why = 'by the user') {
   // Google: revoke our access (best effort - Google being down must not keep
