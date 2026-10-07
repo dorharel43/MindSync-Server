@@ -653,11 +653,18 @@ router.get(
     } catch (err) { console.warn('study stats: mock exams skipped:', err.message); }
     // The last full exam of each course (3/10, Home's readiness) - real
     // evidence like a mock exam. The daily question is one question, not an exam.
+    // Only a sitting mostly graded counts (at least 70% of its regular
+    // points): parts the AI couldn't check would make "0 out of 100".
     const lastFull = {};
     try {
-      const runs = await FullExamRun.find({ userId: req.userId }).sort({ finishedAt: -1 }).limit(100).select('course examId percent finishedAt').lean();
-      const daily = new Set((await FullExam.find({ userId: req.userId, daily: true, _id: { $in: runs.map(r => r.examId) } }).select('_id').lean()).map(e => String(e._id)));
-      for (const r of runs) if (r.course && !daily.has(String(r.examId)) && !lastFull[r.course]) lastFull[r.course] = { percent: r.percent, at: r.finishedAt };
+      const runs = await FullExamRun.find({ userId: req.userId }).sort({ finishedAt: -1 }).limit(100).select('course examId percent max finishedAt').lean();
+      const exams = new Map((await FullExam.find({ userId: req.userId, _id: { $in: runs.map(r => r.examId) } }).select('daily totalPoints').lean()).map(e => [String(e._id), e]));
+      for (const r of runs) {
+        const e = exams.get(String(r.examId));
+        if (!r.course || !e || e.daily || lastFull[r.course]) continue;
+        if (!(e.totalPoints > 0) || (r.max || 0) < e.totalPoints * 0.7) continue;
+        lastFull[r.course] = { percent: r.percent, at: r.finishedAt };
+      }
     } catch (err) { console.warn('study stats: full exams skipped:', err.message); }
     const subjects = Object.entries(byCategory)
       .map(([name, v]) => {
