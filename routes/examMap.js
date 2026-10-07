@@ -65,26 +65,36 @@ router.put(
       return res.json({ success: false, kept: true, topics: old.recurring.length });
     }
     const keep = new Set(recurring.map(r => r.topic));
+    const had = new Set((old ? old.recurring : []).map(r => r.topic));   // (before doc - the same object - changes)
     const doc = old || new CourseProfile({ userId: req.userId, course });
     doc.recurring = recurring;
     doc.pastExams = pastExams;
     doc.analyzedAt = new Date();
     doc.links = (old ? old.links : []).filter(l => keep.has(l.topic));
+    // New topics: every skill is offered again (a big course's, over rounds) -
+    // not only the ones that came after the last link.
+    if (recurring.some(r => !had.has(r.topic))) doc.linkedSkills = [];
     await doc.save();
     res.json({ success: true, topics: recurring.length });
   })
 );
 
-// PUT /api/exam-map/links   { course, links: [{ topic, skills }], skills } - the
+// PUT /api/exam-map/links   { course, topics, links: [{ topic, skills }], skills } - the
 // AI's link, kept only where it names real topics and real skills of the course.
 // skills: the ones the call was given - their old links are replaced; the
 // course's other skills (a big course's, beyond one call) keep theirs.
+// topics: the ones the call was given - a new analysis since then refuses it.
 router.put(
   '/links',
   asyncHandler(async (req, res) => {
     const course = str(req.body.course, 100);
     const profile = await CourseProfile.findOne({ userId: req.userId, course });
     if (!profile) throw new ApiError(404, 'No exam profile for this course yet.');
+    const now = profile.recurring.map(r => r.topic);
+    if (Array.isArray(req.body.topics)) {
+      const given = new Set(req.body.topics.map(tp => str(tp, 200)));
+      if (given.size !== now.length || now.some(tp => !given.has(tp))) return res.status(409).json({ success: false, stale: true });
+    }
     const items = await courseItems(req.userId, course);
     const real = new Set(courseSkills(items, Infinity));
     const asked = new Set((Array.isArray(req.body.skills) ? req.body.skills : []).map(s => str(s, 120)).filter(s => real.has(s)));
