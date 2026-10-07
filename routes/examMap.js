@@ -55,7 +55,8 @@ router.put(
         const of = Math.max(0, Math.min(files, Number(r.of) || 0));
         return { topic: str(r.topic, 200), count: Math.max(0, Math.min(of, Number(r.count) || 0)), of, example: str(r.example, 600) };
       })
-      .filter(r => r.topic && r.of >= 2 && r.count >= 2);
+      .filter(r => r.topic && r.of >= 2 && r.count >= 2)
+      .filter((r, i, all) => all.findIndex(x => x.topic === r.topic) === i);   // (the AI may name one twice)
     const old = await CourseProfile.findOne({ userId: req.userId, course });
     // Nothing valid: the old analysis stays (an empty one would wipe the map).
     if (!recurring.length) return res.json({ success: false, kept: !!old, topics: old ? old.recurring.length : 0 });
@@ -90,10 +91,10 @@ router.put(
     const course = str(req.body.course, 100);
     const profile = await CourseProfile.findOne({ userId: req.userId, course });
     if (!profile) throw new ApiError(404, 'No exam profile for this course yet.');
-    const now = profile.recurring.map(r => r.topic);
+    const now = new Set(profile.recurring.map(r => r.topic));
     if (Array.isArray(req.body.topics)) {
       const given = new Set(req.body.topics.map(tp => str(tp, 200)));
-      if (given.size !== now.length || now.some(tp => !given.has(tp))) return res.status(409).json({ success: false, stale: true });
+      if (given.size !== now.size || [...now].some(tp => !given.has(tp))) return res.status(409).json({ success: false, stale: true });
     }
     const items = await courseItems(req.userId, course);
     const real = new Set(courseSkills(items, Infinity));
