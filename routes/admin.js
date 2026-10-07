@@ -27,6 +27,8 @@ router.post(
       require('../models/ExamRun').deleteMany({ userId: req.userId }),
       require('../models/FullExam').deleteMany({ userId: req.userId }),
       require('../models/FullExamRun').deleteMany({ userId: req.userId }),
+      // (the daily question's "written today" - with the question gone, the day is free again)
+      require('../models/DailyClaim').deleteMany({ userId: req.userId }),
       // The uploaded originals too (30/9).
       require('../rpc/storage').removeAllForUser(req.userId).catch(() => {}),
     ]);

@@ -7,7 +7,11 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
 const { schedule, calibrationReport, OUTCOME_CORRECT } = require('../utils/scheduler');
-const { APP_TIME_ZONE, todayIso, nextExamByCourse, buildStudyQueue } = require('../utils/examSchedule');
+const { todayIso, nextExamByCourse, buildStudyQueue } = require('../utils/examSchedule');
+const { startOfAppDay, countAnsweredToday } = require('../utils/answeredToday');
+const { pickTarget, UNLOCK_AFTER } = require('../utils/dailyQuestion');
+const FullExam = require('../models/FullExam');
+const FullExamRun = require('../models/FullExamRun');
 const { requireAuth } = require('../middleware/auth');
 
 router.use(requireAuth);
@@ -282,7 +286,6 @@ function findGenuineDifficultyItems(items) {
 // A course's questions under exam conditions: typed answers, the check at the
 // end, one score. The latest score is the course's "if the exam were today".
 const ExamRun = require('../models/ExamRun');
-const FullExamRun = require('../models/FullExamRun');
 const User = require('../models/User');
 const { DEFAULT_DAILY_GOAL } = User;
 // A file that IS a past exam: its questions are the closest thing to the
@@ -475,56 +478,52 @@ router.get(
   })
 );
 
-// GET /api/study/stats - deck overview + calibration
-// When today began on the app's clock (Israel - like the planner's "today").
-function startOfAppDay(now = new Date()) {
-  const clock = (d) => {
-    const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
-      timeZone: APP_TIME_ZONE, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
-    }).formatToParts(d).map(x => [x.type, x.value]));
-    return (Number(p.hour) * 3600 + Number(p.minute) * 60 + Number(p.second)) * 1000;
-  };
-  let start = new Date(now.getTime() - clock(now) - now.getMilliseconds());
-  // On the day the clock moves (daylight saving), that lands an hour off
-  // midnight: 23:00 the day before, or 01:00 - one step fixes it.
-  const off = clock(start);
-  if (off) start = new Date(start.getTime() + (off > 12 * 3600000 ? 86400000 - off : -off));
-  return start;
-}
-
 // GET /api/study/today   (3/10, the daily goal)
-// { answered, goal }: questions answered today - in practice, in mock exams
-// and in full exams. Nothing is counted twice:
-//  - a mock exam saves its checked answers as reviews too (POST /exam/runs),
-//    so they come with the reviews - except its blank ones (skipped or out
-//    of time: marked examBlank), which don't count, as a blank part of a
-//    full exam doesn't; its unchecked ones (no review saved) are added from
-//    the run, as a full exam's unchecked written parts count;
-//  - a full exam saves no reviews: each part written, chosen, "I don't know"
-//    or from a photo counts.
-// No streaks: tomorrow starts again from 0, no penalty.
+// { answered, goal }: questions answered today - see utils/answeredToday.js.
 router.startOfAppDay = startOfAppDay;   // (for tests)
 router.get(
   '/today',
   asyncHandler(async (req, res) => {
-    const since = startOfAppDay();
-    const [items, mocks, fulls, user] = await Promise.all([
-      StudyItem.find({ userId: req.userId, 'reviews.reviewedAt': { $gte: since } }).select('reviews.reviewedAt reviews.examBlank').lean(),
-      ExamRun.find({ userId: req.userId, finishedAt: { $gte: since } }).select('answers.verdict').lean(),
-      FullExamRun.find({ userId: req.userId, finishedAt: { $gte: since } }).select('answers').lean(),
+    const [answered, user] = await Promise.all([
+      countAnsweredToday(req.userId),
       User.findById(req.userId).select('dailyGoal').lean()
     ]);
-    let answered = 0;
-    for (const i of items) answered += (i.reviews || []).filter(r => !r.examBlank && r.reviewedAt && new Date(r.reviewedAt) >= since).length;
-    for (const r of mocks) answered += (r.answers || []).filter(a => a.verdict === 'unchecked').length;
-    for (const r of fulls) {
-      answered += (r.answers || []).filter(a => a.status !== 'not_chosen'
-        && (String(a.text || '').trim() || a.choice || a.dontKnow || a.fromPhoto)).length;
-    }
     res.json({ answered, goal: (user && user.dailyGoal) || DEFAULT_DAILY_GOAL });
   })
 );
 
+// GET /api/study/daily-question   (3/10) - see utils/dailyQuestion.js
+// { state, answered, unlockAt, target: { course, topic, why, accuracy, exam } | null,
+//   exam: { id, title, course, topic } | null, run: { id, percent, score, outOf } | null }
+// state: 'done' (today's is answered), 'written' (waiting to be answered -
+// today's, or the last one, from an earlier day, never answered: it waits
+// until it is), 'locked' (fewer than unlockAt answers today), 'ready' (can be
+// written), 'none' (no course with files to write it from).
+router.get(
+  '/daily-question',
+  asyncHandler(async (req, res) => {
+    const [answered, todays, last] = await Promise.all([
+      countAnsweredToday(req.userId),
+      FullExam.findOne({ userId: req.userId, daily: true, dailyDay: todayIso() }).sort({ createdAt: 1 }).select('title course topic').lean(),
+      FullExam.findOne({ userId: req.userId, daily: true }).sort({ createdAt: -1 }).select('title course topic').lean()
+    ]);
+    let exam = todays;
+    if (!exam && last && !(await FullExamRun.exists({ userId: req.userId, examId: last._id }))) exam = last;
+    const out = { state: 'none', answered, unlockAt: UNLOCK_AFTER, target: null, exam: null, run: null };
+    if (exam) {
+      out.exam = { id: String(exam._id), title: exam.title, course: exam.course, topic: exam.topic };
+      const run = await FullExamRun.findOne({ userId: req.userId, examId: exam._id }).sort({ finishedAt: -1 }).select('percent score outOf').lean();
+      out.run = run ? { id: String(run._id), percent: run.percent, score: run.score, outOf: run.outOf } : null;
+      out.state = run ? 'done' : 'written';
+      return res.json(out);
+    }
+    out.target = await pickTarget(req.userId, examsForCourses);
+    if (out.target) out.state = answered >= UNLOCK_AFTER ? 'ready' : 'locked';
+    res.json(out);
+  })
+);
+
+// GET /api/study/stats - deck overview + calibration
 router.get(
   '/stats',
   asyncHandler(async (req, res) => {
