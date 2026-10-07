@@ -271,6 +271,8 @@ router.delete(
     const exam = await FullExam.findOneAndDelete({ _id: req.params.id, userId: req.userId });
     if (!exam) throw new ApiError(404, 'Exam not found');
     await FullExamRun.deleteMany({ examId: exam._id, userId: req.userId });
+    // A daily question deleted: its day is free again (as before the claim).
+    if (exam.daily && exam.dailyDay) await DailyClaim.deleteOne({ _id: `${req.userId}:${exam.dailyDay}` }).catch(() => {});
     res.json({ success: true });
   })
 );
