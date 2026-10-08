@@ -61,8 +61,9 @@ authenticated user's `userId`.
 | `/api/events` | Calendar events |
 | `/api/folders` | Folders for study material |
 | `/api/files` | Uploaded files and their extracted text |
-| `/api/settings` | Per-user settings |
 | `/api/study` | Study items, recall questions, confidence calibration results |
+| `/api/full-exams` | Full exams built like a course's past exams, their sittings and grading |
+| `/api/exam-map` | What repeats in a course's past exams, joined with the student's answers |
 | `/api/admin` | Hard reset of the caller's own data |
 
 A health check is served at `/`.

@@ -294,7 +294,7 @@ const User = require('../models/User');
 const { DEFAULT_DAILY_GOAL } = User;
 // A file that IS a past exam: its questions are the closest thing to the
 // real one, so they come first.
-const PAST_EXAM_FILE = /מבחן|בחינה|מועד|בוחן|\bexams?\b|midterm|quiz|final exam/i;
+const PAST_EXAM_FILE = /מבחן|בחינה|מועד|בוחן|(?:^|[^a-z])exams?(?![a-z])|(?:^|[^a-z])moed(?![a-z])|midterm|quiz|final exam/i;   // (8/10: also exam_2023, moed_a)
 // ...and not a twin (AI-written after a mistake) that inherited such a file name.
 const isPastExam = (i) => !i.twinOf && PAST_EXAM_FILE.test(i.sourceFile || '');
 const shuffled = (list) => { const a = list.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
