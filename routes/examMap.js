@@ -56,7 +56,8 @@ router.put(
       .filter(r => r && (Array.isArray(r.exams) || (Number(r.count) || 0) <= (Number(r.of) || 0)))
       .map(r => {
         const of = Math.max(0, Math.min(files, Number(r.of) || 0));
-        const exams = Array.isArray(r.exams) ? [...new Set(r.exams.map(n => str(n, 300)).filter(n => known.has(n)))].slice(0, of) : null;
+        // (not de-duplicated: two files may share a name - the app counted each file once)
+        const exams = Array.isArray(r.exams) ? r.exams.map(n => str(n, 300)).filter(n => known.has(n)).slice(0, of) : null;
         const count = exams ? exams.length : Math.max(0, Math.min(of, Number(r.count) || 0));
         return { topic: str(r.topic, 200), count, of, example: str(r.example, 600), ...(exams ? { exams } : {}) };
       })
