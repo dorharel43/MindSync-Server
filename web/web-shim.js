@@ -9,7 +9,7 @@
 //   - a few are browser things and are done right here: logging in (the
 //     token lives in localStorage), picking and uploading files, opening the
 //     summary in a new tab, copying to the clipboard;
-//   - desktop-only features (focus mode closes other apps) answer "nothing".
+//   - desktop-only features (the log file) answer "nothing".
 // Loaded BEFORE ui.js / icons.js / renderer.js (see tools/sync-web.py).
 (function () {
     'use strict';
@@ -257,15 +257,9 @@
             catch (err) { return { error: err.message }; }
         },
 
-        // Desktop-only: the web version can't close other programs, read a
-        // log file on the computer, or pick an .exe. (Their buttons are
-        // hidden - html.is-web .desktop-only.)
+        // Desktop-only: the web version can't read a log file on the
+        // computer. (Its buttons are hidden - html.is-web .desktop-only.)
         'get-diagnostic-log': async () => '',
-        'get-blocked-apps': async () => [],
-        'get-suggested-apps': async () => [],
-        'add-blocked-app': async () => ({ error: 'Focus mode is only in the desktop app.' }),
-        'remove-blocked-app': async () => ({ error: 'Focus mode is only in the desktop app.' }),
-        'pick-application': async () => null,
         'save-ai-config': async () => ({ success: true }),
         'test-gemini-key': async () => ({ ok: true })
     };
@@ -275,7 +269,7 @@
     // buttons stuck on "Saving…" / "Uploading…" when the connection dropped
     // or the server was waking up. (A 401 still reloads to the login.)
     const LIST_CHANNELS = new Set(['get-tasks', 'get-events', 'get-folders', 'get-files', 'get-files-light',
-        'get-study-items', 'get-due-study-items', 'get-study-categories', 'get-task-categories', 'get-blocked-apps']);
+        'get-study-items', 'get-due-study-items', 'get-study-categories', 'get-task-categories']);
     const NULL_CHANNELS = new Set(['get-study-stats', 'get-profile']);
     // These answer with JSON TEXT (the renderer JSON.parse()s it) - so a
     // failure is JSON text too, or the real reason became "not valid JSON".
@@ -299,7 +293,7 @@
 
     const ipcRenderer = {
         invoke,
-        send() { /* only 'toggle-blocking' (focus mode) - desktop only */ },
+        send() { /* nothing is sent one-way from the web version */ },
         on(name, fn) { (listeners[name] = listeners[name] || []).push(fn); }
     };
 

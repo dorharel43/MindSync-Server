@@ -130,8 +130,6 @@ s = s[:a] + """async function deleteGoogleCopy(googleEventId) {
 """ + s[b:]
 # summary window -> the browser opens summary.html in a tab
 cut("// =====================================\n// Summary window", "ipcMain.handle('get-file',")
-# focus mode can't block apps from a web page
-cut("// =====================================\n// App Blocker", "// =====================================\n// System Core")
 # app lifecycle
 a = s.index("function createWindow () {")
 # The full exam's stages, for tools/exam-check.js (the owner's exam check).

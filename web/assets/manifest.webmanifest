@@ -1,7 +1,7 @@
 {
   "name": "MindSync",
   "short_name": "MindSync",
-  "description": "Study assistant for university students - practice questions from your course files, exam readiness and a weekly plan.",
+  "description": "Exam coach for university students - what your course's exams keep asking, how much of it you know, and what to practice today.",
   "id": "/app/",
   "start_url": "/app/",
   "scope": "/",

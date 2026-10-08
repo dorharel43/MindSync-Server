@@ -1,7 +1,7 @@
 # MindSync Server
 
-REST API for [MindSync](https://github.com/dorharel43/MindSync), an AI study
-assistant for students. Express 5 + MongoDB, with JWT authentication and
+REST API for [MindSync](https://github.com/dorharel43/MindSync), an exam coach
+for university students. Express 5 + MongoDB, with JWT authentication and
 per-user data isolation.
 
 The server is the single owner of all data. The desktop client holds no database

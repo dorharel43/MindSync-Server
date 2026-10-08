@@ -4706,6 +4706,8 @@ ipcMain.handle('get-onboarding-status', async () => {
     dueCount: stats ? stats.dueCount || 0 : 0,
     hasKey: Boolean(aiProvider.readConfig().geminiKey),
     files: (files || []).length,
+    // the guide's "past exams" step (8/10)
+    pastExams: (files || []).filter(f => PAST_EXAM_FILE.test(f.name || '')).length,
     questions: stats ? stats.totalItems || 0 : 0,
     reviews: stats ? stats.reviewsAllTime || 0 : 0,
     calendarItems: (events || []).length + (tasks || []).length,

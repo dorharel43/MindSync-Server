@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MindSync - study assistant for university students</title>
-    <meta name="title-he" content="MindSync - עוזר למידה לסטודנטים">
-    <meta name="title-en" content="MindSync - study assistant for university students">
-    <meta name="description" content="MindSync turns your course files into practice questions and shows what you really know before the exam. MindSync הופכת את קבצי הקורס לשאלות תרגול ומראה מה באמת ידוע לך לפני המבחן.">
+    <title>MindSync - exam coach for university students</title>
+    <meta name="title-he" content="MindSync - מאמן למבחנים לסטודנטים">
+    <meta name="title-en" content="MindSync - exam coach for university students">
+    <meta name="description" content="MindSync is an exam coach: it learns what your course's exams keep asking, checks what you really know, and tells you what to practice today. MindSync מאמנת למבחנים: לומדת מה המבחנים בקורס שואלים שוב ושוב, בודקת מה באמת ידוע לך ואומרת מה לתרגל היום.">
     <!-- Icons, install, and the preview a link gets in WhatsApp / Telegram /
          Facebook (30/9). {{BASE}} is filled in by server.js - a preview
          image needs a full address. -->
@@ -17,8 +17,8 @@
     <meta name="theme-color" content="#2f64d6">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="MindSync">
-    <meta property="og:title" content="MindSync - עוזר למידה לסטודנטים">
-    <meta property="og:description" content="שאלות תרגול מהקבצים של הקורס, מוכנות לכל מבחן ולוח שבועי - ולדעת מה באמת ידוע לך.">
+    <meta property="og:title" content="MindSync - מאמן למבחנים לסטודנטים">
+    <meta property="og:description" content="לומדת מה המבחנים בקורס שואלים שוב ושוב, בודקת כמה באמת ידוע לך, ואומרת מה הכי משתלם לתרגל היום.">
     <meta property="og:image" content="{{BASE}}/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -79,17 +79,17 @@
             <section class="hero">
                 <h1>לדעת מה באמת ידוע לך - לפני המבחן.</h1>
                 <p class="lead">
-                    MindSync היא אפליקציית למידה לסטודנטים. מעלים את קבצי הקורס, וה-AI כותב מהם שאלות תרגול וסיכומים.
-                    לפני כל תשובה מסמנים כמה בטוחים - וכך רואים מה באמת ידוע ומה רק נדמה שידוע.
-                    האפליקציה גם קוראת את תאריכי המבחנים מהסילבוס ובונה לוח שבועי.
+                    MindSync היא אפליקציה שמאמנת סטודנטים למבחנים. היא לומדת מהמבחנים הקודמים של הקורס מה נשאל שוב ושוב,
+                    בודקת כמה מזה באמת ידוע לך, ואומרת מה הכי משתלם לתרגל היום.
+                    אפשר להתחיל בתחילת הסמסטר ולהעלות כל שבוע את ההרצאה החדשה - או להעלות הכול בבת אחת בתקופת המבחנים.
                 </p>
                 <a class="btn" href="/app/#signup">ליצירת חשבון</a>
             </section>
 
             <section class="grid">
                 <div class="card">
-                    <h2>שאלות תרגול מהחומר שלך</h2>
-                    <p>מעלים מצגות, סיכומים או דפי תרגילים (PDF, PowerPoint או Word). ה-AI כותב שאלות, בודק את התשובות ומסביר מה חסר ולמה.</p>
+                    <h2>מה חוזר במבחן</h2>
+                    <p>מעלים מבחנים קודמים של הקורס ורואים אילו נושאים מופיעים כמעט בכל מבחן - ובאילו מבחנים בדיוק. לכל נושא: כמה נכון עונים עליו בתרגול, ומה הכי משתלם לתרגל קודם.</p>
                 </div>
                 <div class="card">
                     <h2>יודעים - או רק חושבים שיודעים?</h2>
@@ -97,15 +97,19 @@
                 </div>
                 <div class="card">
                     <h2>מוכנות לכל מבחן</h2>
-                    <p>לכל קורס רואים כמה ממנו תרגלת, כמה ידוע לך ואיזה קצב צריך עד המבחן. השאלות חוזרות בזמן הנכון - לפני תאריך המבחן.</p>
+                    <p>לכל קורס רואים כמה ממנו תרגלת וכמה ידוע לך. הציון המשוער בא רק ממבחן דמה או מבחן מלא אמיתי - לא מניחוש. השאלות חוזרות בזמן הנכון לפני תאריך המבחן.</p>
                 </div>
                 <div class="card">
                     <h2>טעית? שאלה חדשה על אותו רעיון</h2>
                     <p>אחרי טעות ה-AI כותב שאלה חדשה על אותו רעיון מזווית אחרת - או אותו תרגיל עם מספרים אחרים. כך תשובה נכונה מראה הבנה, לא זיכרון של התשובה.</p>
                 </div>
                 <div class="card">
-                    <h2>מבחן דמה עם ציון</h2>
-                    <p>שאלות מכל הקורס בתנאי מבחן, עם שעון - ושאלות ממבחנים קודמים שהעלית קודמות. בסוף: ציון, פירוק לפי נושאים, ומה לתרגל עכשיו.</p>
+                    <h2>מבחן דמה ומבחן מלא</h2>
+                    <p>מבחן דמה משאלות הקורס, או מבחן מלא חדש שבנוי כמו המבחנים הקודמים של הקורס - עם שעון, בדיקה לפי מחוון וציון. בסוף: פירוק לפי נושאים ומה לתרגל עכשיו.</p>
+                </div>
+                <div class="card">
+                    <h2>שאלות מכל הרצאה</h2>
+                    <p>מעלים כל שבוע את ההרצאה החדשה (PDF, PowerPoint או Word) - או את כל הקורס בבת אחת. ה-AI כותב שאלות, בודק את התשובות ומסביר מה חסר ולמה.</p>
                 </div>
                 <div class="card">
                     <h2>מהסילבוס ללוח השבועי</h2>
@@ -128,17 +132,17 @@
             <section class="hero">
                 <h1>Know what you really know - before the exam.</h1>
                 <p class="lead">
-                    MindSync is a study assistant for university students. Upload your course files and the AI writes practice
-                    questions and summaries from them. Before each answer you say how sure you are - so you see what you really know,
-                    and what you only think you know. It also reads exam dates from your syllabus and plans your week.
+                    MindSync is an exam coach for university students. It learns from your course's past exams what keeps coming up,
+                    checks how much of it you really know, and tells you what's worth practicing today.
+                    Start in week one and add each lecture as it comes - or upload the whole course in the exam period.
                 </p>
                 <a class="btn" href="/app/#signup">Create an account</a>
             </section>
 
             <section class="grid">
                 <div class="card">
-                    <h2>Practice questions from your material</h2>
-                    <p>Upload lecture slides, notes or exercise sheets (PDF, PowerPoint or Word). The AI writes questions, checks your answers and says what's missing - and why.</p>
+                    <h2>What repeats in the exam</h2>
+                    <p>Upload your course's past exams and see which topics nearly every exam asks - and in which exams exactly. For each topic: how often you get it right in practice, and what's worth practicing first.</p>
                 </div>
                 <div class="card">
                     <h2>Know it - or only think you do?</h2>
@@ -146,15 +150,19 @@
                 </div>
                 <div class="card">
                     <h2>Readiness for every exam</h2>
-                    <p>For each course: how much you've practiced, how much of it you know, and the pace you need until the exam. Questions come back at the right time - before the exam date.</p>
+                    <p>For each course: how much you've practiced and how much of it you know. The estimated grade comes only from a real mock or full exam - never a guess. Questions come back at the right time before the exam date.</p>
                 </div>
                 <div class="card">
                     <h2>Wrong? A new question on the same idea</h2>
                     <p>After a mistake the AI writes a new question on the same idea from another angle - or the same exercise with other numbers. So a right answer shows understanding, not a remembered answer.</p>
                 </div>
                 <div class="card">
-                    <h2>Mock exams with a score</h2>
-                    <p>Questions from the whole course under exam conditions, with a clock - questions from past exams you uploaded first. At the end: a score, a breakdown by topic, and what to practice now.</p>
+                    <h2>Mock exams and full exams</h2>
+                    <p>A mock exam from your course's questions, or a new full exam built like the course's past exams - with a clock, marking by a rubric and a grade. At the end: a breakdown by topic and what to practice now.</p>
+                </div>
+                <div class="card">
+                    <h2>Questions from every lecture</h2>
+                    <p>Upload each week's lecture (PDF, PowerPoint or Word) - or the whole course at once. The AI writes questions, checks your answers and says what's missing - and why.</p>
                 </div>
                 <div class="card">
                     <h2>From syllabus to weekly plan</h2>

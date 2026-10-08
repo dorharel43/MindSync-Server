@@ -257,7 +257,6 @@ app.use('/api/events', require('./routes/events'));
 app.use('/api/folders', require('./routes/folders'));
 app.use('/api/files', require('./routes/files'));
 // /api/stats was removed with XP, levels and the streak.
-app.use('/api/settings', require('./routes/settings'));
 app.use('/api/study', require('./routes/study'));
 app.use('/api/full-exams', require('./routes/fullExams'));
 app.use('/api/exam-map', require('./routes/examMap'));
