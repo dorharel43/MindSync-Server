@@ -68,6 +68,22 @@ authenticated user's `userId`.
 
 A health check is served at `/`.
 
+## Tests
+
+`npm test` runs every test in `tests/` against a real server and a fake Gemini
+(`tests/fake-gemini.js`) - no AI key, nothing paid. It needs a MongoDB at
+`TEST_MONGO` (default `mongodb://127.0.0.1:27017`); each run uses a fresh
+database and drops it at the end. `npm test -- map daily` runs only the files
+whose name has "map" or "daily". GitHub Actions runs the same on every pull
+request (`.github/workflows/test.yml`).
+
+- `tests/unit/` - pure checks (exam rules, math, JSON repair, the AI guard, and that every `t('...')` string has Hebrew).
+- `tests/e2e/` - through the HTTP API: exam map, daily question, daily goal, per-criterion marks.
+
+A new feature comes with its test here. A test passes only when it exits 0, prints no
+`FAIL` line, and its final `N/M` count is complete - a test that checks nothing fails.
+
+
 ---
 
 ## Project structure
