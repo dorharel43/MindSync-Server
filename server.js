@@ -260,6 +260,7 @@ app.use('/api/files', require('./routes/files'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/study', require('./routes/study'));
 app.use('/api/full-exams', require('./routes/fullExams'));
+app.use('/api/exam-map', require('./routes/examMap'));
 app.use('/api/admin', require('./routes/admin'));
 // Web version: the app's logic (AI, parsing, planner...) and file uploads.
 app.use('/api/rpc', require('./rpc'));

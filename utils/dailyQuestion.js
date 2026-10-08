@@ -16,6 +16,8 @@ const StudyItem = require('../models/StudyItem');
 const FileItem = require('../models/FileItem');
 const FullExam = require('../models/FullExam');
 const FullExamRun = require('../models/FullExamRun');
+const CourseProfile = require('../models/CourseProfile');
+const { bestTopic } = require('./examMap');
 
 const UNLOCK_AFTER = 5;           // answers today before the question opens
 const EXAM_SOON_DAYS = 45;
@@ -74,7 +76,17 @@ async function pickTarget(userId, examsForCourses) {
   }
   if (!course) course = courses.sort((a, b) => a.localeCompare(b))[0];
 
-  // The topic: the weakest skill lately.
+  // The topic: where an hour pays most - a topic the course's past exams keep
+  // asking and the student doesn't know yet (utils/examMap.js), when the
+  // course has an exam profile; else the weakest skill lately.
+  const profile = await CourseProfile.findOne({ userId, course }).lean();
+  if (profile) {
+    // (any topic - one with no questions yet is exactly what a new question covers)
+    const best = bestTopic(profile, (byCourse.get(course) || { items: [] }).items, { practicable: false });
+    const repeat = best && lastDaily && lastDaily.course === course && lastDaily.topic === best.topic.slice(0, 120);
+    if (best && !repeat) return { course, topic: best.topic, why, accuracy: best.accuracy, exam: exams[course] || null, repeats: { count: best.count, of: best.of } };
+  }
+  // The weakest skill lately.
   const bySkill = new Map();
   for (const i of (byCourse.get(course) || { items: [] }).items) {
     const tag = String(i.skillTag || '').trim();
