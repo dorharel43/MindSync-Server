@@ -49,7 +49,7 @@ function topicStats(profile, items) {
     const share = r.of ? Math.min(1, (r.count || 0) / r.of) : 0;
     const weakness = !its.length ? 1 : accuracy == null ? 0.5 : 1 - accuracy / 100;
     return {
-      topic: r.topic, count: r.count || 0, of: r.of || 0, example: r.example || '',
+      topic: r.topic, count: r.count || 0, of: r.of || 0, example: r.example || '', exams: r.exams || [],
       skills: [...skills], items: its.length, unseen: its.filter(i => !(i.reviews || []).length).length,
       answered, accuracy, value: Math.round(share * weakness * 100)
     };

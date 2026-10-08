@@ -48,12 +48,17 @@ router.put(
     // "in 7 of 8 exams" can't be more exams than were analysed (the AI's
     // count is capped by the files it was given).
     const files = pastExams.length || 50;
-    // (a count over its own "of" contradicts itself - dropped, not repaired)
+    const known = new Set(pastExams);
+    // With "exams" (the files that ask it): count is how many of them are
+    // analysed files. Without: the count as sent - one over its own "of"
+    // contradicts itself and is dropped, not repaired.
     const recurring = (Array.isArray(req.body.recurring) ? req.body.recurring : []).slice(0, 12)
-      .filter(r => r && (Number(r.count) || 0) <= (Number(r.of) || 0))
+      .filter(r => r && (Array.isArray(r.exams) || (Number(r.count) || 0) <= (Number(r.of) || 0)))
       .map(r => {
         const of = Math.max(0, Math.min(files, Number(r.of) || 0));
-        return { topic: str(r.topic, 200), count: Math.max(0, Math.min(of, Number(r.count) || 0)), of, example: str(r.example, 600) };
+        const exams = Array.isArray(r.exams) ? [...new Set(r.exams.map(n => str(n, 300)).filter(n => known.has(n)))].slice(0, of) : null;
+        const count = exams ? exams.length : Math.max(0, Math.min(of, Number(r.count) || 0));
+        return { topic: str(r.topic, 200), count, of, example: str(r.example, 600), ...(exams ? { exams } : {}) };
       })
       .filter(r => r.topic && r.of >= 2 && r.count >= 2)
       .filter((r, i, all) => all.findIndex(x => x.topic === r.topic) === i);   // (the AI may name one twice)

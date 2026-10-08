@@ -10,7 +10,9 @@ const recurringSchema = new mongoose.Schema({
     topic: { type: String, maxlength: 200 },
     count: { type: Number, min: 0, max: 50 },
     of: { type: Number, min: 0, max: 50 },
-    example: { type: String, maxlength: 600, default: '' }
+    example: { type: String, maxlength: 600, default: '' },
+    // the past-exam files that ask it (pastExams' names) - count is how many
+    exams: { type: [{ type: String, maxlength: 300 }], default: undefined }
 }, { _id: false });
 
 const linkSchema = new mongoose.Schema({
