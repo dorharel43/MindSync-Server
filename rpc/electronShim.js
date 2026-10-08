@@ -2,7 +2,7 @@
 // run unchanged on the server (see handlers.js).
 //
 //   ipcMain.handle(name, fn)  -> registers fn as an RPC channel
-//   ipcMain.on(...)           -> desktop-only events (focus mode); ignored
+//   ipcMain.on(...)           -> desktop-only events; ignored
 //   BrowserWindow.getAllWindows()[i].webContents.send('events-changed')
 //                             -> recorded on the current request, and sent
 //                                back to the browser with the response, which

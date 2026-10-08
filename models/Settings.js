@@ -1,8 +1,8 @@
 const mongoose = require('mongoose');
 
-// Singleton: app-wide settings. The actual `tasklist`/`taskkill` polling
-// stays in the Electron main process (OS-level concern) - only the *data*
-// of which apps to block lives here.
+// Focus mode's block list (removed 8/10 - the app is an exam coach now).
+// The model stays only so "Delete account" also removes old documents
+// (utils/deleteAccount.js); nothing reads or writes it any more.
 const settingsSchema = new mongoose.Schema(
   {
     // BUG FIX (30/9): routes/settings.js looks settings up by userId, but the

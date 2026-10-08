@@ -3083,7 +3083,7 @@ function courseMaterialText(files, budget = 90000) {
 
 const isPdfFile = (f) => /\.pdf$/i.test(f.name || '') || /\.pdf$/i.test(f.sourcePath || '');
 // A file that IS a past exam, by its name (the same rule as the Study screen's).
-const PAST_EXAM_FILE = /מבחן|בחינה|מועד|בוחן|\bexams?\b|midterm|quiz|final exam/i;
+const PAST_EXAM_FILE = /מבחן|בחינה|מועד|בוחן|(?:^|[^a-z])exams?(?![a-z])|(?:^|[^a-z])moed(?![a-z])|midterm|quiz|final exam/i;   // (8/10: also exam_2023, moed_a)
 
 // ---- The stages of a full exam. Each one takes its inputs directly, so the
 // owner's exam check (the server's tools/exam-check.js) can run the SAME code
@@ -4706,11 +4706,15 @@ ipcMain.handle('get-onboarding-status', async () => {
     dueCount: stats ? stats.dueCount || 0 : 0,
     hasKey: Boolean(aiProvider.readConfig().geminiKey),
     files: (files || []).length,
+    // the guide's "past exams" step (8/10)
+    pastExams: (files || []).filter(f => PAST_EXAM_FILE.test(f.name || '')).length,
     questions: stats ? stats.totalItems || 0 : 0,
     reviews: stats ? stats.reviewsAllTime || 0 : 0,
     calendarItems: (events || []).length + (tasks || []).length,
     // Exams on the calendar from today on - Home's "no exam dates" tip only when there are none
     upcomingExams: (events || []).filter(e => e.type === 'exam' && e.date && e.date >= toLocalIsoDate(new Date())).length,
+    // the guide's "when is your exam" step: any exam ever (a passed one doesn't reopen it)
+    examsEver: (events || []).filter(e => e.type === 'exam').length,
     // Home's "upcoming exam" (readiness per course, 3/10): the same stats, no extra call
     subjects: stats && Array.isArray(stats.subjects) ? stats.subjects.map(s => ({
       category: s.category, items: s.items, due: s.due, exam: s.exam || null,
