@@ -123,5 +123,7 @@ eventSchema.index({ userId: 1, time: 1 });
 // The course an exam belongs to (8/10): set when the title names exactly one
 // course, or by the student - never guessed between two.
 eventSchema.add({ courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Folder', default: undefined } });
+// The student picked it: no title change ever re-guesses it.
+eventSchema.add({ coursePicked: { type: Boolean, default: undefined } });
 
 module.exports = mongoose.model('Event', eventSchema);

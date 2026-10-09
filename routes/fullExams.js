@@ -294,7 +294,9 @@ router.post(
     let run;
     try {
       run = await FullExamRun.create({
-      userId: req.userId, examId: exam._id, course: exam.course, courseId: exam.courseId || null,
+      userId: req.userId, examId: exam._id, course: exam.course,
+      // (the exam's course id; an exam not yet migrated has none - left for the migration)
+      ...(exam.courseId !== undefined ? { courseId: exam.courseId } : {}),
       startedAt: b.startedAt ? new Date(b.startedAt) : new Date(), finishedAt: new Date(),
       limitSec: num(b.limitSec, 0, 36000), usedSec: num(b.usedSec, 0, 36000),
       answers, ...scoreAnswers(exam, answers),
