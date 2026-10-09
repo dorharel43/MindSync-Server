@@ -13,7 +13,9 @@ jobs:
     timeout-minutes: 20
     services:
       mongo:
-        image: mongo:7
+        # (the official image, from the public ECR mirror - Docker Hub limits
+        # anonymous pulls, and a refused pull failed CI before any test ran)
+        image: public.ecr.aws/docker/library/mongo:7
         ports:
           - 27017:27017
         options: >-
