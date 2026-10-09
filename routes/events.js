@@ -19,9 +19,13 @@ async function pickedCourse(userId, picked) {
 }
 async function courseFields(userId, body, old) {
   const type = body.type !== undefined ? body.type : old && old.type;
+  // A pick is a course sent that differs from the stored one - the app echoes
+  // the whole event back after a Google sync, the guessed course with it.
+  // (None, null, is a pick too: kept.)
   if (body.courseId !== undefined) {
     const courseId = await pickedCourse(userId, body.courseId);
-    return { courseId, coursePicked: courseId != null };
+    if (old && String(courseId || '') === String(old.courseId || '')) return {};
+    return { courseId, coursePicked: true };
   }
   if (type !== 'exam') return {};
   if (old && old.coursePicked) return {};

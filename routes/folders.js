@@ -59,11 +59,23 @@ router.put(
       await FileItem.updateMany({ userId: req.userId, folder: oldFolder.name }, { folder: name, courseId: oldFolder._id });
       await renameCourse(req.userId, oldFolder._id, name);
     }
-    const folder = await Folder.findOneAndUpdate(
-      { _id: req.params.id, userId: req.userId },
-      { name },
-      { new: true, runValidators: true }
-    );
+    let folder;
+    try {
+      folder = await Folder.findOneAndUpdate(
+        { _id: req.params.id, userId: req.userId },
+        { name },
+        { new: true, runValidators: true }
+      );
+    } catch (err) {
+      // A course of that name was made in the meantime: everything goes back
+      // to the old name, as if the rename never started.
+      if (err && err.code === 11000 && name !== oldFolder.name) {
+        await FileItem.updateMany({ userId: req.userId, courseId: oldFolder._id }, { folder: oldFolder.name });
+        await renameCourse(req.userId, oldFolder._id, oldFolder.name);
+        throw new ApiError(409, 'You already have a course with this name.');
+      }
+      throw err;
+    }
     res.json(folder);
   })
 );

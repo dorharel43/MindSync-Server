@@ -116,9 +116,16 @@ let n = 0;
   check('exam: an edit (title + type sent again) keeps the picked course', same(r.body.courseId, stats._id), JSON.stringify(r.body.courseId));
   r = await j(`/api/events/${ev._id || ev.id}`, { method: 'PUT', body: JSON.stringify({ title: `מבחן ב${NEW}`, type: 'exam' }) }, token);
   check('exam: even a new title keeps the picked course', same(r.body.courseId, stats._id), JSON.stringify(r.body.courseId));
+  // "No course" picked: kept, even when the title changes.
+  r = await j(`/api/events/${ev._id || ev.id}`, { method: 'PUT', body: JSON.stringify({ courseId: null }) }, token);
+  r = await j(`/api/events/${ev._id || ev.id}`, { method: 'PUT', body: JSON.stringify({ title: 'מבחן בלוגיקה', type: 'exam' }) }, token);
+  check('exam: "no course" picked is kept through a title change', r.body.courseId === null || r.body.courseId === undefined, JSON.stringify(r.body.courseId));
   const auto = (await j('/api/events', { method: 'POST', body: JSON.stringify({ title: 'מבחן בלוגיקה', type: 'exam', day: 'Monday', date: '2026-12-05', time: '09:00' }) }, token)).body;
   r = await j(`/api/events/${auto._id || auto.id}`, { method: 'PUT', body: JSON.stringify({ title: 'מבחן בלוגיקה', type: 'exam', date: '2026-12-06' }) }, token);
   check('exam: an automatic link stays when the title doesn\'t change', same(r.body.courseId, logic._id), JSON.stringify(r.body.courseId));
+  // The app echoes the whole event back after a Google sync (courseId with it): still automatic.
+  r = await j(`/api/events/${auto._id || auto.id}`, { method: 'PUT', body: JSON.stringify({ ...r.body, googleEventId: 'g1' }) }, token);
+  check('exam: the echo after a Google sync doesn\'t turn a guess into a pick', r.body.coursePicked !== true && same(r.body.courseId, logic._id), JSON.stringify([r.body.coursePicked, r.body.courseId]));
   r = await j(`/api/events/${auto._id || auto.id}`, { method: 'PUT', body: JSON.stringify({ title: 'מבחן בסטטיסטיקה', type: 'exam' }) }, token);
   check('exam: an automatic link follows a new title', same(r.body.courseId, stats._id), JSON.stringify(r.body.courseId));
   const other = await reg('b');
