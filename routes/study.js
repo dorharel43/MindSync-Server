@@ -294,7 +294,7 @@ const User = require('../models/User');
 const { DEFAULT_DAILY_GOAL } = User;
 // A file that IS a past exam: its questions are the closest thing to the
 // real one, so they come first.
-const PAST_EXAM_FILE = /מבחן|בחינה|מועד|בוחן|(?:^|[^a-z])exams?(?![a-z])|(?:^|[^a-z])moed(?![a-z])|midterm|quiz|final exam/i;   // (8/10: also exam_2023, moed_a)
+const { PAST_EXAM_FILE, courseIdFor, courseIdsFor, cleanName } = require('../utils/courses');
 // ...and not a twin (AI-written after a mistake) that inherited such a file name.
 const isPastExam = (i) => !i.twinOf && PAST_EXAM_FILE.test(i.sourceFile || '');
 const shuffled = (list) => { const a = list.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -384,7 +384,7 @@ router.post(
     // The run first; then each checked answer counts as practice too (a
     // failure in between leaves a run without practice, never the reverse).
     const run = await ExamRun.create({
-      userId: req.userId, course, clientRunId,
+      userId: req.userId, course, courseId: await courseIdFor(req.userId, course), clientRunId,
       startedAt: Number.isNaN(started.getTime()) ? new Date() : started,
       finishedAt: new Date(),
       limitSec: Math.max(0, Math.min(Number(req.body.limitSec) || 0, 6 * 3600)),
@@ -798,7 +798,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const { question, answer, mode, skillTag, category, sourceFile } = req.body;
     await assertRoom(StudyItem, req.userId);
-    const item = await StudyItem.create({ userId: req.userId, question, answer, mode, skillTag, category, sourceFile });
+    const item = await StudyItem.create({ userId: req.userId, question, answer, mode, skillTag, category, sourceFile, courseId: await courseIdFor(req.userId, category) });
     res.status(201).json(item);
   })
 );
@@ -818,6 +818,7 @@ router.post(
     // SKIPS an item that fails validation, silently - a full worked solution
     // over 4000 characters just vanished while the app said "added".
     const fit = (v, max) => { const t = String(v || '').trim(); return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t; };
+    const ids = await courseIdsFor(req.userId, items.filter(Boolean).map(i => fit(i.category, 100)));
     const created = await StudyItem.insertMany(
       items.filter(i => i && String(i.question || '').trim()).map(i => ({
         userId: req.userId,
@@ -827,6 +828,7 @@ router.post(
         solutionSource: ['document', 'ai', 'user', 'imported', 'none'].includes(i.solutionSource) ? i.solutionSource : 'document',
         skillTag: fit(i.skillTag, 120),
         category: fit(i.category, 100),
+        courseId: ids.get(cleanName(fit(i.category, 100))) || null,
         sourceFile: fit(i.sourceFile, 300),
         twinOf: typeof i.twinOf === 'string' && /^[a-f0-9]{24}$/i.test(i.twinOf) ? i.twinOf : null,
         kind: ['know', 'understand', 'practice'].includes(i.kind) ? i.kind : ''
@@ -979,7 +981,8 @@ router.put(
     const edited = question !== undefined || answer !== undefined || mode !== undefined;
     const item = await StudyItem.findOneAndUpdate(
       { _id: req.params.id, userId: req.userId },
-      { question, answer, mode, skillTag, category, suspended, mySolution, solutionSource, ...(edited ? { nextVariant: null } : {}) },
+      { question, answer, mode, skillTag, category, suspended, mySolution, solutionSource, ...(edited ? { nextVariant: null } : {}),
+        ...(category !== undefined ? { courseId: await courseIdFor(req.userId, category) } : {}) },
       { new: true, runValidators: true, omitUndefined: true }
     );
     if (!item) throw new ApiError(404, 'Study item not found');

@@ -87,4 +87,9 @@ const fullExamSchema = new mongoose.Schema({
 
 fullExamSchema.index({ userId: 1, course: 1, createdAt: -1 });
 
+// The course (8/10, utils/courses.js): the folder's id next to its name, so a
+// rename reaches this too. null = no course; missing = from before (migrated).
+fullExamSchema.add({ courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Folder', default: undefined } });
+fullExamSchema.index({ userId: 1, courseId: 1 });
+
 module.exports = mongoose.model('FullExam', fullExamSchema);

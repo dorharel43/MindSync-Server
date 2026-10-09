@@ -6,6 +6,7 @@ const FullExam = require('../models/FullExam');
 const FullExamRun = require('../models/FullExamRun');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../middleware/ApiError');
+const { courseIdFor } = require('../utils/courses');
 const { requireAuth } = require('../middleware/auth');
 const { todayIso } = require('../utils/examSchedule');
 const { startOfAppDay, countAnsweredToday } = require('../utils/answeredToday');
@@ -208,7 +209,7 @@ router.post(
     }
     let exam;
     try {
-      exam = await FullExam.create({ userId: req.userId, ...data });
+      exam = await FullExam.create({ userId: req.userId, ...data, courseId: await courseIdFor(req.userId, data.course) });
     } catch (err) {
       if (claimId) await DailyClaim.deleteOne({ _id: claimId }).catch(() => {});   // nothing saved: the day is still free
       throw err;
@@ -282,7 +283,7 @@ router.post(
   '/:id/runs',
   asyncHandler(async (req, res) => {
     if (!isId(req.params.id)) throw new ApiError(404, 'Exam not found');
-    const exam = await FullExam.findOne({ _id: req.params.id, userId: req.userId }).select('course questions maxGrade dontKnowShare').lean();
+    const exam = await FullExam.findOne({ _id: req.params.id, userId: req.userId }).select('course courseId questions maxGrade dontKnowShare').lean();
     if (!exam) throw new ApiError(404, 'Exam not found');
     const b = req.body || {};
     const clientRunId = (typeof b.clientRunId === 'string' && b.clientRunId.slice(0, 40)) || require('crypto').randomBytes(12).toString('hex');
@@ -293,7 +294,7 @@ router.post(
     let run;
     try {
       run = await FullExamRun.create({
-      userId: req.userId, examId: exam._id, course: exam.course,
+      userId: req.userId, examId: exam._id, course: exam.course, courseId: exam.courseId || null,
       startedAt: b.startedAt ? new Date(b.startedAt) : new Date(), finishedAt: new Date(),
       limitSec: num(b.limitSec, 0, 36000), usedSec: num(b.usedSec, 0, 36000),
       answers, ...scoreAnswers(exam, answers),

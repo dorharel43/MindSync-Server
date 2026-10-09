@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Folder = require('../models/Folder');
 const FileItem = require('../models/FileItem');
+const { renameCourse, removeCourse } = require('../utils/courses');
 const asyncHandler = require('../middleware/asyncHandler');
 const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
@@ -29,7 +30,9 @@ router.post(
   })
 );
 
-// PUT /api/folders/:id - rename (cascades to files that reference it by name)
+// PUT /api/folders/:id - rename. A folder is a course (8/10): the rename
+// reaches everything of the course by its id - questions, exam map, mock and
+// full exams - not only the files (it used to leave all those on the old name).
 router.put(
   '/:id',
   asyncHandler(async (req, res) => {
@@ -46,8 +49,9 @@ router.put(
     if (oldName !== folder.name) {
       // Scoped by userId too - otherwise renaming your own folder could
       // silently reassign a different user's files that happen to share the
-      // old folder name.
-      await FileItem.updateMany({ userId: req.userId, folder: oldName }, { folder: folder.name });
+      // old folder name. (By name too: a file saved before courseId.)
+      await FileItem.updateMany({ userId: req.userId, folder: oldName }, { folder: folder.name, courseId: folder._id });
+      await renameCourse(req.userId, folder._id, folder.name);
     }
 
     res.json(folder);
@@ -64,8 +68,10 @@ router.delete(
 
     const { modifiedCount } = await FileItem.updateMany(
       { userId: req.userId, folder: folder.name },
-      { folder: 'No Folder' }
+      { folder: 'No Folder', courseId: null }
     );
+    // Everything else of the course keeps its name and history, unlinked.
+    await removeCourse(req.userId, folder._id);
 
     res.json({ success: true, deletedId: req.params.id, filesMoved: modifiedCount });
   })

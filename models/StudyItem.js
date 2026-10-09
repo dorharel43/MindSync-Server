@@ -194,4 +194,9 @@ studyItemSchema.virtual('strength').get(function () {
     return Math.round((weighted / totalWeight) * 100);
 });
 
+// The course (8/10, utils/courses.js): the folder's id next to its name, so a
+// rename reaches this too. null = no course; missing = from before (migrated).
+studyItemSchema.add({ courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Folder', default: undefined } });
+studyItemSchema.index({ userId: 1, courseId: 1 });
+
 module.exports = mongoose.model('StudyItem', studyItemSchema);

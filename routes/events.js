@@ -4,6 +4,21 @@ const Event = require('../models/Event');
 const asyncHandler = require('../middleware/asyncHandler');
 const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
+const Folder = require('../models/Folder');
+const { examCourseId } = require('../utils/courses');
+
+// An exam's course (8/10): the course the student picked (one of theirs), or
+// - not picked - the one course its title names; none when unsure.
+async function examCourse(userId, picked, title) {
+  if (picked === null || picked === '') return null;
+  if (picked !== undefined) {
+    if (!/^[a-f0-9]{24}$/i.test(String(picked))) throw new ApiError(400, 'Unknown course');
+    const own = await Folder.findOne({ _id: picked, userId }).select('_id').lean();
+    if (!own) throw new ApiError(400, 'Unknown course');
+    return own._id;
+  }
+  return examCourseId(userId, title || '');
+}
 const { requireAuth } = require('../middleware/auth');
 
 router.use(requireAuth);
@@ -38,7 +53,8 @@ router.post(
     await assertRoom(Event, req.userId);
     const event = await Event.create({
       userId: req.userId,
-      title, day, date, until, from, importId, time, type, location, googleEventId, durationMinutes, autoScheduled, task
+      title, day, date, until, from, importId, time, type, location, googleEventId, durationMinutes, autoScheduled, task,
+      ...(type === 'exam' ? { courseId: await examCourse(req.userId, req.body.courseId, title) } : {})
     });
     res.status(201).json(event);
   })
@@ -49,9 +65,15 @@ router.put(
   '/:id',
   asyncHandler(async (req, res) => {
     const { title, day, date, until, from, importId, time, type, location, googleEventId, durationMinutes, autoScheduled, task } = req.body;
+    const update = { title, day, date, until, from, importId, time, type, location, googleEventId, durationMinutes, autoScheduled, task };
+    // An exam's course: the one picked, or - when the title changes - the one it names.
+    if (req.body.courseId !== undefined || title !== undefined || type === 'exam') {
+      const old = await Event.findOne({ _id: req.params.id, userId: req.userId }).select('type title').lean();
+      if (old && (type || old.type) === 'exam') update.courseId = await examCourse(req.userId, req.body.courseId, title !== undefined ? title : old.title);
+    }
     const event = await Event.findOneAndUpdate(
       { _id: req.params.id, userId: req.userId },
-      { title, day, date, until, from, importId, time, type, location, googleEventId, durationMinutes, autoScheduled, task },
+      update,
       { new: true, runValidators: true, omitUndefined: true }
     );
     if (!event) throw new ApiError(404, 'Event not found');

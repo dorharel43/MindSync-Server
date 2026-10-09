@@ -33,4 +33,9 @@ const courseProfileSchema = new mongoose.Schema({
 }, { timestamps: true });
 courseProfileSchema.index({ userId: 1, course: 1 }, { unique: true });
 
+// The course (8/10, utils/courses.js): the folder's id next to its name, so a
+// rename reaches this too. null = no course; missing = from before (migrated).
+courseProfileSchema.add({ courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Folder', default: undefined } });
+courseProfileSchema.index({ userId: 1, courseId: 1 });
+
 module.exports = mongoose.model('CourseProfile', courseProfileSchema);
