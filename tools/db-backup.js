@@ -3,9 +3,9 @@
 // manifest with the count of each. Nothing is changed in the database.
 //
 //   Windows (PowerShell), from the MindSync-Server folder:
-//     $env:BACKUP_MONGO_URI="<the MONGO_URI from Render>"; node tools/db-backup.js
+//     $env:BACKUP_MONGO_URI='<the MONGO_URI from Render>'; node tools/db-backup.js
 //   Mac / Linux:
-//     BACKUP_MONGO_URI="<the MONGO_URI from Render>" node tools/db-backup.js
+//     BACKUP_MONGO_URI='<the MONGO_URI from Render>' node tools/db-backup.js
 //
 // Writes backups/<date-time>/ (the folder is in .gitignore - a backup holds
 // users' data and never goes into the repository). Restore: tools/db-restore.js.

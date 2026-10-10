@@ -5,9 +5,9 @@
 // Suspend the server on Render first, so no one writes while it runs.
 //
 //   Windows (PowerShell):
-//     $env:RESTORE_MONGO_URI="<address>"; node tools/db-restore.js backups/<folder>
+//     $env:RESTORE_MONGO_URI='<address>'; node tools/db-restore.js backups/<folder>
 //   Mac / Linux:
-//     RESTORE_MONGO_URI="<address>" node tools/db-restore.js backups/<folder>
+//     RESTORE_MONGO_URI='<address>' node tools/db-restore.js backups/<folder>
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
