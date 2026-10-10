@@ -16,3 +16,6 @@ npm-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+# database backups (tools/db-backup.js) - users' data, never committed
+backups/

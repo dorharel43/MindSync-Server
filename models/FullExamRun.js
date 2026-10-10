@@ -47,4 +47,9 @@ fullExamRunSchema.index({ userId: 1, examId: 1, finishedAt: -1 });
 // A sitting sent twice (a retry) is saved once.
 fullExamRunSchema.index({ userId: 1, clientRunId: 1 }, { unique: true });
 
+// The course (8/10, utils/courses.js): the folder's id next to its name, so a
+// rename reaches this too. null = no course; missing = from before (migrated).
+fullExamRunSchema.add({ courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Folder', default: undefined } });
+fullExamRunSchema.index({ userId: 1, courseId: 1 });
+
 module.exports = mongoose.model('FullExamRun', fullExamRunSchema);
