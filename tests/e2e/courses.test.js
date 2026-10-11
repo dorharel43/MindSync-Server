@@ -28,7 +28,8 @@ let n = 0;
   const now = new Date();
   const LONG = 'קורס ארוך '.repeat(11).trim();   // 109 characters - folders before 8/10 allowed 120
   await db.collection('folders').insertMany([{ userId: uid, name: C, createdAt: now, updatedAt: now }, { userId: uid, name: LONG, createdAt: now, updatedAt: now }]);
-  await db.collection('studyitems').insertOne({ question: 'בלי משתמש', answer: 'a', category: C, createdAt: now });   // broken legacy record
+  const orphanQ = (await db.collection('studyitems').insertOne({ question: 'בלי משתמש', answer: 'a', category: C, createdAt: now })).insertedId;   // from before accounts: no owner
+  const orphanE = (await db.collection('events').insertOne({ title: `מבחן ב${C}`, type: 'exam', day: 'Monday', time: '09:00' })).insertedId;
   await db.collection('fileitems').insertMany([
     { userId: uid, name: 'מבחן 2024 מועד א.pdf', folder: C, content: 'x', createdAt: now },
     { userId: uid, name: 'הרצאה 1.pdf', folder: C, content: 'x', createdAt: now },
@@ -49,7 +50,8 @@ let n = 0;
   const c1 = await migrateCourses();
   const calc = await db.collection('folders').findOne({ userId: uid, name: C });
   check('migration: creates no folder (only folders the student made are courses)', (await db.collection('folders').countDocuments({ userId: uid })) === foldersBefore && !(await db.collection('folders').findOne({ userId: uid, name: 'סטטיסטיקה' })), JSON.stringify(c1));
-  check('migration: a broken record (no user) is skipped, the rest done', c1.linked > 0, JSON.stringify(c1));
+  const oq = await db.collection('studyitems').findOne({ _id: orphanQ }), oe = await db.collection('events').findOne({ _id: orphanE });
+  check('migration: records with no owner are counted apart (not "skipped"), marked with no course, the rest done', c1.linked > 0 && c1.orphans >= 2 && c1.skipped === 0 && oq.courseId === null && oe.courseId === null && oq.category === C, JSON.stringify(c1));
   const items = await db.collection('studyitems').find({ userId: uid }).toArray();
   const byQ = Object.fromEntries(items.map(i => [i.question, i]));
   check('migration: questions get their course id; a name with no folder null', same(byQ.q1.courseId, calc._id) && same(byQ.q2.courseId, calc._id) && byQ.q3.courseId === null, JSON.stringify(items.map(i => [i.question, i.courseId])));
@@ -67,7 +69,7 @@ let n = 0;
   check('migration: an exam naming no course stays unlinked (never guessed)', byT['מבחן סוף סמסטר'].courseId === null);
   check('migration: names are kept', byQ.q1.category === C && byName['הרצאה 1.pdf'].folder === C);
   const c2 = await migrateCourses();
-  check('migration: a second run changes nothing', c2.linked === 0 && c2.unlinked === 0 && c2.exams === 0 && c2.roles === 0, JSON.stringify(c2));
+  check('migration: a second run changes nothing (and doesn\'t count the no-owner records again)', c2.linked === 0 && c2.unlinked === 0 && c2.exams === 0 && c2.roles === 0 && c2.orphans === 0 && c2.skipped === 0, JSON.stringify(c2));
 
   // ---- 1b. A folder the student makes takes in what carries its name.
   let r0 = await j('/api/folders', { method: 'POST', body: JSON.stringify({ name: 'סטטיסטיקה' }) }, token);

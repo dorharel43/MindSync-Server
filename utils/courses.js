@@ -101,17 +101,25 @@ async function removeCourse(userId, courseId) {
 // the id of the folder of that name - or null (no such folder, or no course);
 // exam events get the one course their title names; files get a role. Only
 // adds - the names stay, nothing is deleted or created - and a second run
-// finds nothing to do. A record that can't be handled is skipped (logged),
-// never stops the rest.
+// finds nothing to do. A record with no owner (from before accounts; no one
+// can see it) is marked with no course and counted apart - once, not on every
+// start. A record that can't be handled is skipped (logged), never stops the rest.
 async function migrateCourses() {
-  const counts = { linked: 0, unlinked: 0, exams: 0, roles: 0, skipped: 0 };
+  const counts = { linked: 0, unlinked: 0, exams: 0, roles: 0, orphans: 0, skipped: 0 };
+  // no owner: no course, so it isn't looked at again
+  const orphan = async (Model, ids) => {
+    if (!ids.length) return;
+    const r = await Model.updateMany({ _id: { $in: ids }, courseId: { $exists: false } }, { $set: { courseId: null } });
+    counts.orphans += r.modifiedCount || 0;
+  };
   const step = async (name, fn) => { try { await fn(); } catch (err) { counts.skipped += 1; console.warn(`courses migration (${name}):`, err.message); } };
   for (const [Model, field] of NAMED()) {
     await step(Model.modelName, async () => {
       const docs = await Model.find({ courseId: { $exists: false } }).select(`userId ${field}`).lean();
       const groups = new Map();   // [userId, name] -> ids
+      const noOwner = [];
       for (const d of docs) {
-        if (!d.userId) { counts.skipped += 1; continue; }
+        if (!d.userId) { noOwner.push(d._id); continue; }
         const key = JSON.stringify([String(d.userId), cleanName(d[field])]);
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(d._id);
@@ -124,13 +132,19 @@ async function migrateCourses() {
           counts[courseId ? 'linked' : 'unlinked'] += r.modifiedCount || 0;
         });
       }
+      await orphan(Model, noOwner);
     });
   }
+  await step('Event no owner', async () => {
+    const Event = require('../models/Event');
+    const ids = await Event.find({ type: 'exam', userId: null, courseId: { $exists: false } }).distinct('_id');
+    await orphan(Event, ids);
+  });
   await step('Event', async () => {
     const Event = require('../models/Event');
     const exams = await Event.find({ type: 'exam', courseId: { $exists: false } }).select('userId title').lean();
     for (const e of exams) {
-      if (!e.userId) { counts.skipped += 1; continue; }
+      if (!e.userId) continue;
       await step('Event', async () => {
         const courseId = await examCourseId(e.userId, e.title);
         await Event.updateOne({ _id: e._id, courseId: { $exists: false } }, { $set: { courseId } });
