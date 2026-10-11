@@ -2,7 +2,13 @@ const express = require('express');
 const router = express.Router();
 const Folder = require('../models/Folder');
 const FileItem = require('../models/FileItem');
-const { renameCourse, renameClash, adoptByName, removeCourse } = require('../utils/courses');
+const { renameCourse, renameClash, adoptByName, removeCourse, NO_COURSE } = require('../utils/courses');
+// The app's own names for "no course" and its upload choices ("__newcourse__",
+// "__new__:<name>") can't be a course's name (8/10).
+const reservedName = (name) => {
+  const n = String(name == null ? '' : name).trim();
+  return (n !== '' && NO_COURSE.has(n)) || n.startsWith('__');
+};
 const asyncHandler = require('../middleware/asyncHandler');
 const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
@@ -26,6 +32,7 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const { name } = req.body;
+    if (reservedName(name)) throw new ApiError(400, 'This name is taken by the app - choose another.');
     await assertRoom(Folder, req.userId);
     const folder = await Folder.create({ userId: req.userId, name });
     await adoptByName(req.userId, folder._id, folder.name);
@@ -46,6 +53,7 @@ router.put(
     const name = String(req.body.name == null ? '' : req.body.name).trim();
     if (!name) throw new ApiError(400, 'Folder name is required');
     if (name.length > 100) throw new ApiError(400, 'Course name is too long (max 100 characters)');
+    if (reservedName(name)) throw new ApiError(400, 'This name is taken by the app - choose another.');
     if (name !== oldFolder.name) {
       if (await Folder.findOne({ userId: req.userId, name, _id: { $ne: oldFolder._id } }).select('_id').lean()) {
         throw new ApiError(409, 'You already have a course with this name.');

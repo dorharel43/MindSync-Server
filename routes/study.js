@@ -295,8 +295,20 @@ const { DEFAULT_DAILY_GOAL } = User;
 // A file that IS a past exam: its questions are the closest thing to the
 // real one, so they come first.
 const { PAST_EXAM_FILE, courseIdFor, courseIdsFor, cleanName } = require('../utils/courses');
-// ...and not a twin (AI-written after a mistake) that inherited such a file name.
-const isPastExam = (i) => !i.twinOf && PAST_EXAM_FILE.test(i.sourceFile || '');
+// What the student said the file is (8/10: its role) - by its name only for a
+// file from before roles, or one deleted since. Not a twin (AI-written after a
+// mistake) that inherited such a file name.
+async function pastExamTest(userId) {
+  const roles = new Map();
+  for (const f of await FileItem.find({ userId }).select('name role').lean()) {
+    if (f.role) roles.set(f.name, roles.get(f.name) === 'past_exam' ? 'past_exam' : f.role);
+  }
+  return (i) => {
+    if (i.twinOf) return false;
+    const role = roles.get(i.sourceFile || '');
+    return role ? role === 'past_exam' : PAST_EXAM_FILE.test(i.sourceFile || '');
+  };
+}
 const shuffled = (list) => { const a = list.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
 // GET /api/study/exam/pick?course=...&count=15
@@ -308,6 +320,7 @@ router.get(
     const count = Math.min(Math.max(parseInt(req.query.count, 10) || 15, 3), 40);
     const all = (await StudyItem.find({ userId: req.userId, suspended: false }).select('-reviews').lean())
       .filter(i => courseOf(i) === course || (i.category || '') === course);
+    const isPastExam = await pastExamTest(req.userId);
     // Past-exam questions first (up to half), then the rest spread across
     // topics - a real exam covers the course, not one chapter.
     const past = shuffled(all.filter(isPastExam));
