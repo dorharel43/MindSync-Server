@@ -19,7 +19,8 @@ const folderSchema = new mongoose.Schema(
       // ever create a folder called "Algebra" would get a 500 from Mongo's
       // duplicate-key error. Uniqueness has to be scoped per user; see the
       // compound index below, which replaces this.
-      maxlength: [120, 'Folder name is too long (max 120 characters)'],
+      // (100, as the course name everywhere else - a folder is a course, 8/10)
+      maxlength: [100, 'Course name is too long (max 100 characters)'],
     },
   },
   { timestamps: true }

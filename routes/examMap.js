@@ -8,6 +8,7 @@ const StudyItem = require('../models/StudyItem');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../middleware/ApiError');
 const { requireAuth } = require('../middleware/auth');
+const { courseIdFor } = require('../utils/courses');
 const { topicStats, needsLink, courseSkills } = require('../utils/examMap');
 
 router.use(requireAuth);
@@ -73,7 +74,7 @@ router.put(
     }
     const keep = new Set(recurring.map(r => r.topic));
     const had = new Set((old ? old.recurring : []).map(r => r.topic));   // (before doc - the same object - changes)
-    const doc = old || new CourseProfile({ userId: req.userId, course });
+    const doc = old || new CourseProfile({ userId: req.userId, course, courseId: await courseIdFor(req.userId, course) });
     doc.recurring = recurring;
     doc.pastExams = pastExams;
     doc.analyzedAt = new Date();

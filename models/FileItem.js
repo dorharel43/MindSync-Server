@@ -59,4 +59,11 @@ const fileItemSchema = new mongoose.Schema(
 
 fileItemSchema.index({ userId: 1, folder: 1 });
 
+// The course (8/10, utils/courses.js): the folder's id next to its name, so a
+// rename reaches this too. null = no course; missing = from before (migrated).
+fileItemSchema.add({ courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Folder', default: undefined } });
+fileItemSchema.index({ userId: 1, courseId: 1 });
+// What the file is (8/10) - the student picks at upload; the name guesses.
+fileItemSchema.add({ role: { type: String, enum: ['material', 'past_exam', 'syllabus'], default: undefined } });
+
 module.exports = mongoose.model('FileItem', fileItemSchema);

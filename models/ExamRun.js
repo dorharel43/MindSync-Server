@@ -31,4 +31,9 @@ const examRunSchema = new mongoose.Schema({
 examRunSchema.index({ userId: 1, course: 1, finishedAt: -1 });
 examRunSchema.index({ userId: 1, clientRunId: 1 });
 
+// The course (8/10, utils/courses.js): the folder's id next to its name, so a
+// rename reaches this too. null = no course; missing = from before (migrated).
+examRunSchema.add({ courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Folder', default: undefined } });
+examRunSchema.index({ userId: 1, courseId: 1 });
+
 module.exports = mongoose.model('ExamRun', examRunSchema);

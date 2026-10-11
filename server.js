@@ -157,6 +157,11 @@ async function housekeeping() {
 }
 mongoose.connection.once('open', () => {
   require('./utils/mailer').checkSetup();   // says in the log whether email will work
+  // Courses (8/10): data saved before courseId gets its course's id. Only
+  // adds, and a second run finds nothing to do (utils/courses.js).
+  require('./utils/courses').migrateCourses()
+    .then(c => { if (c.linked || c.unlinked || c.exams || c.roles || c.skipped) console.log(`📚 Courses: ${c.linked} records linked, ${c.unlinked} with no course, ${c.exams} exams linked, ${c.roles} file roles set, ${c.skipped} skipped.`); })
+    .catch(err => console.warn('courses migration:', err.message));
   setTimeout(housekeeping, 60 * 1000).unref();
   setInterval(housekeeping, 24 * 60 * 60 * 1000).unref();
 });

@@ -4,6 +4,7 @@ const FileItem = require('../models/FileItem');
 const asyncHandler = require('../middleware/asyncHandler');
 const { assertRoom } = require('../middleware/perUserCap');
 const ApiError = require('../middleware/ApiError');
+const { courseIdFor, roleOf } = require('../utils/courses');
 const { requireAuth } = require('../middleware/auth');
 
 router.use(requireAuth);
@@ -41,7 +42,9 @@ router.post(
   asyncHandler(async (req, res) => {
     const { name, content, folder, sourcePath } = req.body;
     await assertRoom(FileItem, req.userId);
-    const file = await FileItem.create({ userId: req.userId, name, content, folder, sourcePath });
+    // (the course's id next to its name, and what the file is - 8/10)
+    const role = ['material', 'past_exam', 'syllabus'].includes(req.body.role) ? req.body.role : roleOf(name);
+    const file = await FileItem.create({ userId: req.userId, name, content, folder, sourcePath, role, courseId: await courseIdFor(req.userId, folder) });
     res.status(201).json(file);
   })
 );
@@ -52,6 +55,8 @@ router.put(
   asyncHandler(async (req, res) => {
     const { name, content, folder, sourcePath, summary } = req.body;
     const update = { name, content, folder, sourcePath };
+    if (folder !== undefined) update.courseId = await courseIdFor(req.userId, folder);
+    if (['material', 'past_exam', 'syllabus'].includes(req.body.role)) update.role = req.body.role;
     // Stamp the time only when a summary is actually being written, so the
     // client can show "saved <date>" - renaming a file shouldn't touch it.
     if (summary !== undefined) {
