@@ -62,6 +62,30 @@ const C = 'מבני נתונים';
   const aNow = await db.collection('fileitems').findOne({ _id: new mongoose.Types.ObjectId(String(a._id || a.id)) });
   check('change: another student\'s file can\'t be changed', !!(r && r.error) && aNow.role === 'material', JSON.stringify(r).slice(0, 120));
 
+  r = await rpc(token, 'update-file', b._id || b.id, { role: 'past_exam', name: 'renamed.pdf', content: '' });
+  const bAfter = await db.collection('fileitems').findOne({ _id: new mongoose.Types.ObjectId(String(b._id || b.id)) });
+  check('change: with a real role, a name or text sent along is still dropped', r.role === 'past_exam' && bAfter.name === b.name && bAfter.content === 'x', JSON.stringify([bAfter.role, bAfter.name]));
+  await rpc(token, 'update-file', b._id || b.id, { role: 'material' });
+
+  // ---- 4. A mock exam puts the questions of what the student marked "past exam" first.
+  const qs = [];
+  for (let k = 0; k < 4; k++) qs.push({ question: `ממבחן ${k}`, answer: 'x', category: C, skillTag: 'מיון', sourceFile: '2022_B.pdf' });
+  for (let k = 0; k < 4; k++) qs.push({ question: `מהדף ${k}`, answer: 'x', category: C, skillTag: 'מיון', sourceFile: 'מבחן 2024 - דף נוסחאות.pdf' });
+  await j('/api/study/bulk', { method: 'POST', body: JSON.stringify({ items: qs }) }, token);
+  const pick = (await j(`/api/study/exam/pick?course=${encodeURIComponent(C)}&count=4`, {}, token)).body;
+  const items = Array.isArray(pick) ? pick : (pick.items || []);
+  const flagged = items.filter(i => i.fromPastExam).map(i => i.question);
+  check('mock exam: "past exam" by the file\'s role (2022_B yes, the "מבחן" formula sheet marked material no)', items.length > 0 && flagged.length > 0 && flagged.every(q => q.startsWith('ממבחן')) && !items.some(i => i.question.startsWith('מהדף') && i.fromPastExam), JSON.stringify(items.map(i => [i.question, i.fromPastExam])));
+
+  // ---- 5. Names the app keeps for itself aren't a course's name.
+  const bad = [];
+  for (const name of ['No Folder', 'Uncategorized', '__newcourse__', '__new__:x']) {
+    const res = await j('/api/folders', { method: 'POST', body: JSON.stringify({ name }) }, token);
+    if (res.status !== 400) bad.push([name, res.status]);
+  }
+  const ren = await j(`/api/folders/${courseId}`, { method: 'PUT', body: JSON.stringify({ name: 'No Folder' }) }, token);
+  check('names the app keeps ("No Folder", "Uncategorized", "__…") are refused - new or renamed', !bad.length && ren.status === 400, JSON.stringify([bad, ren.status]));
+
   console.log(results.join('\n'));
   console.log(`${results.filter(x => x.startsWith('PASS')).length}/${results.length}`);
   await mongoose.disconnect();
