@@ -116,10 +116,16 @@ function examMatchesCourse(examTitle, course, opts = {}) {
 
 // course -> its NEXT exam { title, date, daysLeft } (today counts; a past
 // exam doesn't). Exams without a date (weekly events) are ignored.
-function nextExamByCourse(courses, exams, today) {
+// An exam that knows its course (courseId - the student's pick, or the one
+// course its title named; courseNames: id -> the course's name now) belongs
+// to that course only (18/10). One the student said is no course's
+// (coursePicked, no id) belongs to none. Only the rest go by the title.
+function nextExamByCourse(courses, exams, today, courseNames = new Map()) {
     const upcoming = (exams || [])
         .filter(e => e && e.date && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.date >= today)
         .sort((a, b) => a.date.localeCompare(b.date));
+    const linkedName = (e) => (e.courseId ? courseNames.get(String(e.courseId)) : undefined);
+    const byTitle = upcoming.filter(e => !e.courseId && !e.coursePicked);
     const result = {};
     // "חדו"א 2" -> "חדוא": courses that differ only by their number.
     const base = (c) => normalize(c).split(' ').filter(w => w && !isMarker(w)).join(' ');
@@ -127,8 +133,9 @@ function nextExamByCourse(courses, exams, today) {
     for (const c of courses) sameBase.set(base(c), (sameBase.get(base(c)) || 0) + 1);
     for (const course of courses) {
         const alone = sameBase.get(base(course)) === 1;
-        const hit = upcoming.find(e => examMatchesCourse(e.title, course))
-            || (alone ? upcoming.find(e => examMatchesCourse(e.title, course, { numberOptional: true })) : null);
+        const hit = upcoming.find(e => linkedName(e) === course)
+            || byTitle.find(e => examMatchesCourse(e.title, course))
+            || (alone ? byTitle.find(e => examMatchesCourse(e.title, course, { numberOptional: true })) : null);
         if (hit) result[course] = { title: hit.title, date: hit.date, daysLeft: daysBetween(today, hit.date) };
     }
     return result;

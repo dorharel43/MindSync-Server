@@ -24,8 +24,11 @@ router.use(requireAuth);
 async function examsForCourses(userId, courses) {
   try {
     const today = todayIso();
-    const exams = await Event.find({ userId, type: 'exam', date: { $gte: today } }).select('title date').lean();
-    return nextExamByCourse(courses, exams, today);
+    const [exams, folders] = await Promise.all([
+      Event.find({ userId, type: 'exam', date: { $gte: today } }).select('title date courseId coursePicked').lean(),
+      require('../models/Folder').find({ userId }).select('name').lean()
+    ]);
+    return nextExamByCourse(courses, exams, today, new Map(folders.map(f => [String(f._id), f.name])));
   } catch (err) {
     console.warn('study: exam lookup failed, scheduling without exams:', err.message);
     return {};
