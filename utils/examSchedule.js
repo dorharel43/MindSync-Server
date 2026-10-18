@@ -133,9 +133,12 @@ function nextExamByCourse(courses, exams, today, courseNames = new Map()) {
     for (const c of courses) sameBase.set(base(c), (sameBase.get(base(c)) || 0) + 1);
     for (const course of courses) {
         const alone = sameBase.get(base(course)) === 1;
-        const hit = upcoming.find(e => linkedName(e) === course)
-            || byTitle.find(e => examMatchesCourse(e.title, course))
+        // The NEXT one: a later linked exam doesn't hide a nearer one its
+        // title names (both lists are by date).
+        const linked = upcoming.find(e => linkedName(e) === course);
+        const titled = byTitle.find(e => examMatchesCourse(e.title, course))
             || (alone ? byTitle.find(e => examMatchesCourse(e.title, course, { numberOptional: true })) : null);
+        const hit = linked && titled ? (titled.date < linked.date ? titled : linked) : (linked || titled);
         if (hit) result[course] = { title: hit.title, date: hit.date, daysLeft: daysBetween(today, hit.date) };
     }
     return result;

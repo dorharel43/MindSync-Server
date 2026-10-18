@@ -75,7 +75,19 @@ const CALC = 'חדו"א 2', STATS = 'סטטיסטיקה';
   // A syllabus imported for a course: its exam is that course's, whatever its title says.
   res = await rpc('import-syllabus-items', [{ kind: 'exam', title: 'מועד א', date: inDays(7).date, time: '09:00' }], { course: STATS, courseId: String(stats._id) });
   const imported = (await j('/api/events', {}, token)).body.find(e => e.title && e.title.includes('מועד א'));
-  check('syllabus import with a course: the exam is linked to it by id', imported && String(imported.courseId) === String(stats._id) && ((await examOf(STATS)) || {}).date === inDays(7).date, JSON.stringify([res && res.errors, imported && imported.courseId]));
+  // (coursePicked: the id was SENT - its title, "מועד א - סטטיסטיקה", would link it by name anyway)
+  check('syllabus import with a course: the exam is linked to it by id', imported && String(imported.courseId) === String(stats._id) && imported.coursePicked === true && ((await examOf(STATS)) || {}).date === inDays(7).date, JSON.stringify([res && res.errors, imported && imported.courseId, imported && imported.coursePicked]));
+
+  // 6. A later picked exam doesn't hide a nearer one the title names: "מבחן
+  // בחדו"א" (no number - linked by no one at save) is the only course of its
+  // name's, so it is the renamed course's... use a fresh course for this.
+  const alg = (await j('/api/folders', { method: 'POST', body: JSON.stringify({ name: 'אלגברה ב' }) }, token)).body;
+  await j('/api/study/bulk', { method: 'POST', body: JSON.stringify({ items: [1, 2].map(i => ({ question: `מטריצה ${i}`, answer: 'x', category: 'אלגברה ב', skillTag: 'מטריצות' })) }) }, token);
+  const far = await event('בוחן סיום', 30);
+  await pick(far._id, alg._id);
+  await event('מבחן באלגברה', 2);   // no letter: linked at save to no course; by title only when alone
+  ex = await examOf('אלגברה ב');
+  check('a nearer exam its title names beats a later picked one', ex && ex.date === inDays(2).date, JSON.stringify(ex));
 
   console.log(results.join('\n'));
   console.log(`${results.filter(x => x.startsWith('PASS')).length}/${results.length}`);
