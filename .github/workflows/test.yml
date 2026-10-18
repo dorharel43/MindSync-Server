@@ -11,24 +11,25 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    services:
-      mongo:
-        # (the official image, from the public ECR mirror - Docker Hub limits
-        # anonymous pulls, and a refused pull failed CI before any test ran)
-        image: public.ecr.aws/docker/library/mongo:7
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      # MongoDB from MongoDB's own apt repository (18/10): the image registries
+      # (Docker Hub, then its ECR mirror) refused anonymous pulls with
+      # "toomanyrequests" and failed CI before any test ran.
+      - name: Install and start MongoDB
+        run: |
+          curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | sudo gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg
+          echo "deb [ arch=amd64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/8.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+          sudo apt-get update -q
+          sudo apt-get install -y -q mongodb-org-server
+          mkdir -p "$RUNNER_TEMP/mongo-db"
+          mongod --dbpath "$RUNNER_TEMP/mongo-db" --bind_ip 127.0.0.1 --port 27017 --fork --logpath "$RUNNER_TEMP/mongod.log"
+          for i in $(seq 1 30); do (echo > /dev/tcp/127.0.0.1/27017) 2>/dev/null && break; sleep 1; done
+          (echo > /dev/tcp/127.0.0.1/27017) 2>/dev/null || { cat "$RUNNER_TEMP/mongod.log"; exit 1; }
       - run: npm ci
       - run: npm test
         env:
