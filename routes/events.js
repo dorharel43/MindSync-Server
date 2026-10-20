@@ -21,10 +21,13 @@ async function courseFields(userId, body, old) {
   const type = body.type !== undefined ? body.type : old && old.type;
   // A pick is a course sent that differs from the stored one - the app echoes
   // the whole event back after a Google sync, the guessed course with it.
-  // (None, null, is a pick too: kept.)
+  // (None, null, is a pick too: kept.) Or one sent with coursePicked: true -
+  // the student answering "which course?" (18/10: "not a course exam" for an
+  // exam that had no course yet was the same as the stored null, so it was
+  // dropped and the question kept coming back).
   if (body.courseId !== undefined) {
     const courseId = await pickedCourse(userId, body.courseId);
-    if (old && String(courseId || '') === String(old.courseId || '')) return {};
+    if (old && body.coursePicked !== true && String(courseId || '') === String(old.courseId || '')) return {};
     return { courseId, coursePicked: true };
   }
   if (type !== 'exam') return {};
