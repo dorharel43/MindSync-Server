@@ -116,6 +116,9 @@ router.post(
     if (!into) throw new ApiError(404, 'Folder not found');
     const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
     if (!name || NO_COURSE.has(name) || name.length > 200) throw new ApiError(400, 'Nothing to move.');
+    // (a name that IS a course: its tasks, which carry only a name, would move
+    // too - that's a merge, not this)
+    if (name !== into.name && await Folder.exists({ userId: req.userId, name })) throw new ApiError(400, 'That name is one of your courses - merge it instead.');
     const moved = await absorbName(req.userId, name, into);
     res.json({ success: true, into: { id: into._id, name: into.name }, moved });
   })

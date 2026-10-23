@@ -107,6 +107,8 @@ const inDays = (n) => { const d = new Date(Date.now() + n * 86400000); return { 
   // same name, but already some course's: not touched
   const dId = new mongoose.Types.ObjectId(String(d._id));
   await db.collection('studyitems').insertOne({ userId: uid, question: 'של קורס אחר', answer: 'x', category: ORPHAN, courseId: dId, suspended: false, mode: 'recall', skillTag: 't', dueDate: now, interval: 0, repetitions: 0, easeFactor: 2.5, reviews: [], createdAt: now });
+  r = await j(`/api/folders/${into._id}/absorb`, { method: 'POST', body: JSON.stringify({ name: 'לוגיקה' }) }, token);
+  check('absorb a name that is one of the courses: refused (that\'s a merge)', r.status === 400, String(r.status));
   r = await j(`/api/folders/${into._id}/absorb`, { method: 'POST', body: JSON.stringify({ name: 'Uncategorized' }) }, token);
   check('absorb "no course" itself: refused', r.status === 400, String(r.status));
   r = await j(`/api/folders/${into._id}/absorb`, { method: 'POST', body: JSON.stringify({ name: ORPHAN }) }, other);
