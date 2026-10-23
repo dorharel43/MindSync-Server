@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Folder = require('../models/Folder');
 const FileItem = require('../models/FileItem');
-const { renameCourse, renameClash, adoptByName, removeCourse, mergeCourse, NO_COURSE } = require('../utils/courses');
+const { renameCourse, renameClash, adoptByName, removeCourse, mergeCourse, absorbName, NO_COURSE } = require('../utils/courses');
 // The app's own names for "no course" and its upload choices ("__newcourse__",
 // "__new__:<name>") can't be a course's name (8/10).
 const reservedName = (name) => {
@@ -101,6 +101,25 @@ router.post(
       ? await Folder.findOne({ _id: req.body.into, userId: req.userId }).lean() : null;
     if (!into) throw new ApiError(400, 'Choose another of your courses to merge into.');
     const moved = await mergeCourse(req.userId, from, into);
+    res.json({ success: true, into: { id: into._id, name: into.name }, moved });
+  })
+);
+
+// POST /api/folders/:id/absorb { name } - what carries a name that is no
+// course (questions of a course typed by hand, a deleted course's history)
+// becomes this course's (23/10).
+router.post(
+  '/:id/absorb',
+  asyncHandler(async (req, res) => {
+    if (!/^[a-f0-9]{24}$/i.test(String(req.params.id || ''))) throw new ApiError(404, 'Folder not found');
+    const into = await Folder.findOne({ _id: req.params.id, userId: req.userId }).lean();
+    if (!into) throw new ApiError(404, 'Folder not found');
+    const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+    if (!name || NO_COURSE.has(name) || name.length > 200) throw new ApiError(400, 'Nothing to move.');
+    // (a name that IS a course: its tasks, which carry only a name, would move
+    // too - that's a merge, not this)
+    if (name !== into.name && await Folder.exists({ userId: req.userId, name })) throw new ApiError(400, 'That name is one of your courses - merge it instead.');
+    const moved = await absorbName(req.userId, name, into);
     res.json({ success: true, into: { id: into._id, name: into.name }, moved });
   })
 );
