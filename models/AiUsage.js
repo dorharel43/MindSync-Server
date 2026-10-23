@@ -9,7 +9,10 @@ const aiUsageSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     day: { type: String, required: true },          // 'YYYY-MM-DD'
     heavy: { type: Number, default: 0 },
-    light: { type: Number, default: 0 }
+    light: { type: Number, default: 0 },
+    // "Explain it" (23/10): counted as quick checks AND here - its own cap,
+    // so explanations can't use up the checks every answer needs.
+    explain: { type: Number, default: 0 }
 }, { timestamps: true });
 
 aiUsageSchema.index({ userId: 1, day: 1 }, { unique: true });

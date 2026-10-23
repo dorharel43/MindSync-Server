@@ -340,7 +340,8 @@ router.get(
     }
     res.json(shuffled(picked).map(i => ({
       id: String(i._id), question: i.question, answer: i.answer || i.mySolution || '', mode: i.mode,
-      solutionSource: i.solutionSource, skillTag: i.skillTag || '', sourceFile: i.sourceFile || '',
+      // (the student's own solution standing in for a missing answer is theirs, not the material's)
+      solutionSource: i.answer || !i.mySolution ? i.solutionSource : 'user', skillTag: i.skillTag || '', sourceFile: i.sourceFile || '',
       fromPastExam: isPastExam(i)
     })));
   })
@@ -799,6 +800,22 @@ router.put(
   })
 );
 
+// PUT /api/study/:id/mistake   { question, typed, right, slip, quote, file }   (23/10)
+// The explanation of the student's last mistake on it ("Explain it"): shown
+// the next time the question comes up. Replaces the one before.
+router.put(
+  '/:id/mistake',
+  asyncHandler(async (req, res) => {
+    const text = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+    const right = text(req.body.right, 1200);
+    if (!right) throw new ApiError(400, 'An explanation needs its "why".');
+    const lastMistake = { question: text(req.body.question, 400), typed: text(req.body.typed, 1000), right, slip: text(req.body.slip, 600), quote: text(req.body.quote, 400), file: text(req.body.file, 300), at: new Date() };
+    const item = await StudyItem.findOneAndUpdate({ _id: req.params.id, userId: req.userId }, { lastMistake }, { new: true, runValidators: true }).lean();
+    if (!item) throw new ApiError(404, 'Study item not found');
+    res.json({ id: String(item._id), lastMistake: item.lastMistake });
+  })
+);
+
 // GET /api/study/categories
 router.get(
   '/categories',
@@ -993,11 +1010,11 @@ router.put(
   asyncHandler(async (req, res) => {
     const { question, answer, mode, skillTag, category, suspended, mySolution, solutionSource } = req.body;
     // The student rewrote the question or its answer: a version written from
-    // the old text no longer fits (1/10).
+    // the old text no longer fits (1/10) - nor an explanation of it (23/10).
     const edited = question !== undefined || answer !== undefined || mode !== undefined;
     const item = await StudyItem.findOneAndUpdate(
       { _id: req.params.id, userId: req.userId },
-      { question, answer, mode, skillTag, category, suspended, mySolution, solutionSource, ...(edited ? { nextVariant: null } : {}),
+      { question, answer, mode, skillTag, category, suspended, mySolution, solutionSource, ...(edited ? { nextVariant: null, lastMistake: null } : {}),
         ...(category !== undefined ? { courseId: await courseIdFor(req.userId, category) } : {}) },
       { new: true, runValidators: true, omitUndefined: true }
     );

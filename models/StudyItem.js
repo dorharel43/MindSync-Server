@@ -197,6 +197,23 @@ studyItemSchema.virtual('strength').get(function () {
 // The course (8/10, utils/courses.js): the folder's id next to its name, so a
 // rename reaches this too. null = no course; missing = from before (migrated).
 studyItemSchema.add({ courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Folder', default: undefined } });
+
+// The last mistake explained (23/10, "Explain it"): what the student wrote
+// (empty = answered in their head, or "I don't know"), why the answer is the
+// answer, what went wrong, and the line of the material it rests on. Shown
+// the next time the question comes up - after answering, never before.
+const mistakeSchema = new mongoose.Schema({
+    // The question as it was shown (a new version has other numbers): the
+    // start of it, to tell "this version" from "another version".
+    question: { type: String, trim: true, maxlength: 400, default: '' },
+    typed: { type: String, trim: true, maxlength: 1000, default: '' },
+    right: { type: String, trim: true, maxlength: 1200, default: '' },
+    slip: { type: String, trim: true, maxlength: 600, default: '' },
+    quote: { type: String, trim: true, maxlength: 400, default: '' },
+    file: { type: String, trim: true, maxlength: 300, default: '' },
+    at: { type: Date, default: Date.now }
+}, { _id: false });
+studyItemSchema.add({ lastMistake: { type: mistakeSchema, default: null } });
 studyItemSchema.index({ userId: 1, courseId: 1 });
 
 module.exports = mongoose.model('StudyItem', studyItemSchema);

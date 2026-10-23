@@ -486,6 +486,7 @@ async function callGeminiResilient(opts) {
 
     let firstErr = null;
     let lastErr = null;
+    let anyTimedOut = false;   // (a timeout may have been billed - see below)
     for (let i = 0; i < chain.length; i++) {
         const model = chain[i];
         if (dailyQuotaUntil[model] && dailyQuotaUntil[model] > Date.now()) {
@@ -507,6 +508,7 @@ async function callGeminiResilient(opts) {
             if (err.spendingCap) { noteSpendingCap(err); throw err; }
             if (!firstErr) firstErr = err;
             lastErr = err;
+            if (err.timedOut) anyTimedOut = true;
             if (err.dailyQuota) dailyQuotaUntil[model] = err.resetAt;
             // 404 on the CHOSEN model = a model id Google doesn't know (a
             // retired preview, say) - worth falling back to one that exists.
@@ -517,17 +519,22 @@ async function callGeminiResilient(opts) {
     }
 
     console.error(`❌ All models failed. First: ${firstErr.message} | Last: ${lastErr.message}`);
+    // The new error keeps what the old ones said (23/10): without
+    // `overloaded` / the status, a Google outage used up the student's daily
+    // allowance (rpc/aiUsage.js gives it back only for work Google didn't
+    // do). A timeout may have been billed, so it isn't marked.
+    const flags = anyTimedOut ? {} : { status: lastErr.status, overloaded: true };
     if (firstErr.status === 429 && lastErr.status === 429) {
         const reset = firstErr.resetAt || lastErr.resetAt;
-        throw new Error(`You've used today's Gemini quota on every model. It resets${reset ? ` at ${localTimeLabel(reset)}` : ' within 24 hours'}.`);
+        throw Object.assign(new Error(`You've used today's Gemini quota on every model. It resets${reset ? ` at ${localTimeLabel(reset)}` : ' within 24 hours'}.`), { status: 429 });
     }
     if (firstErr.dailyQuota) {
         // The usual case on a free key: the main model's day is used up and
         // the backup is overloaded. Say BOTH - "Google is overloaded" alone
         // hides that the main model won't come back in a few minutes.
-        throw new Error(`${firstErr.message} The backup model is overloaded right now, so nothing could answer.`);
+        throw Object.assign(new Error(`${firstErr.message} The backup model is overloaded right now, so nothing could answer.`), flags);
     }
-    throw new Error('Google\'s AI servers are overloaded right now - not a problem with your key or your file. Try again in a few minutes.');
+    throw Object.assign(new Error('Google\'s AI servers are overloaded right now - not a problem with your key or your file. Try again in a few minutes.'), flags);
 }
 
 // ---- OpenRouter: a second vendor when Google can't answer -----------------------
@@ -874,10 +881,10 @@ async function testGeminiKey(apiKey, model = DEFAULT_GEMINI_MODEL) {
 // Whole-file jobs are "heavy"; short text jobs "light". Reserved before the
 // call (atomically), given back only if Google didn't do the work.
 const usage = require('./aiUsage');
-function withAllowance(fn, kindFor) {
+function withAllowance(fn, kindFor, capFor = () => null) {
     return async (...args) => {
         const kind = kindFor(...args);
-        const ticket = await usage.reserve(kind);
+        const ticket = await usage.reserve(kind, capFor(...args));
         try {
             const out = await fn(...args);
             await usage.release(ticket, false);
@@ -900,9 +907,12 @@ function guardPromptSize(prompt) {
 // options through) marks the second half of a job the student already used a
 // file action on (the understanding top-up), or the daily batch of new
 // question versions: counted as quick checks, not file actions (1/10).
-const lightByOption = (options) => Boolean(options && options.allowance === 'light');
+// `allowance: 'explain'` ("Explain it", 23/10): a quick check that also
+// counts against the daily explanations.
+const lightByOption = (options) => Boolean(options && (options.allowance === 'light' || options.allowance === 'explain'));
 const generateTextCounted = withAllowance((prompt, options) => { guardPromptSize(prompt); return generateText(prompt, options); },
-    (prompt, options = {}) => (lightByOption(options) ? 'light' : (options.maxTokens || 0) >= 4000 || String(prompt || '').length > 12000 ? 'heavy' : 'light'));
+    (prompt, options = {}) => (lightByOption(options) ? 'light' : (options.maxTokens || 0) >= 4000 || String(prompt || '').length > 12000 ? 'heavy' : 'light'),
+    (prompt, options = {}) => (options && options.allowance === 'explain' ? 'explain' : null));
 const generateFromPdfCounted = withAllowance(generateFromPdf, (buffer, prompt, options) => (lightByOption(options) ? 'light' : 'heavy'));
 const generateFromImagesCounted = withAllowance(generateFromImages, () => 'heavy');
 
