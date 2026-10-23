@@ -3,10 +3,11 @@
 const http = require('http');
 const log = [];
 // Test switches: POST /mode {"check": "fail"|"doubtful"|"ok", "grade": "fail"|"ok"}
-const mode = { check: 'ok', grade: 'ok', write: 'ok', replace: 'ok', photo: 'ok', semester: 'none', raw: 'json', fault: 'none', daily: 'ok', recurring: 'base', link: 'ok' };
+const mode = { check: 'ok', grade: 'ok', write: 'ok', replace: 'ok', photo: 'ok', semester: 'none', raw: 'json', fault: 'none', daily: 'ok', recurring: 'base', link: 'ok', explain: 'ok' };
 // fault (3/10, ai-guard): cap | badkey | busy | garbage | cutoff | hang - every model call; /hits counts them
 let hits = 0;
 let lastDailyPrompt = '';
+let lastExplainPrompt = '';
 let linkCalls = 0;
 const blueprint = {
   language: 'he', durationMin: 120, materials: 'דף נוסחאות', instructions: 'ענו על כל השאלות', totalPoints: 100,
@@ -41,6 +42,20 @@ function answer(prompt, images) {
   if (/answered this exam question wrong/.test(prompt)) {
     if (mode.photo === 'fail') throw new Error('photo down');
     return { feedback: 'בשורה השנייה הצבת x=0 ישירות וקיבלת 0/0=0. זה ביטוי לא מוגדר - הגבול הידוע הוא sin(x)/x → 1.' };
+  }
+  // Checking a typed answer in practice: right.
+  if (/You check a university student's answer/.test(prompt)) return { verdict: 'correct', sure: true, feedback: 'בדיוק', answer: 'מתבדר' };
+  // "Explain it" (23/10). mode.explain: ok (quotes the material's first
+  // sentence) | fakequote (a "quote" that is in no text) | down
+  if (/Explain it so they understand it/.test(prompt)) {
+    lastExplainPrompt = prompt;
+    if (mode.explain === 'down') throw new Error('explain down');
+    const material = (/<material[^>]*>\n([\s\S]*?)\n<\/material>/.exec(prompt) || [])[1] || '';
+    const sentences = material.split(/(?<=[.!?])\s/);
+    const first = (sentences.find(x => /מתבדר/.test(x)) || sentences[0] || '').trim();
+    // (the "slip" doubles a command's backslash, as Flash did on 23/10)
+    return { right: 'הטור ההרמוני מתבדר כי סכומי הקטעים מ-$2^k$ עד $2^{k+1}$ גדולים מ-1/2.', slip: /<student_answer>/.test(prompt) ? 'התשובה הניחה שאיברים ששואפים ל-0 מבטיחים התכנסות, כמו $\\\\frac{1}{n}$.' : 'הבלבול הנפוץ: איבר ששואף ל-0 לא מספיק.',
+      quote: mode.explain === 'fakequote' ? 'משפט שלא מופיע בשום מקום בחומר של הקורס' : first };
   }
   // Handwriting (item 3): the copy of a photographed answer.
   if (/show a student's handwritten answer/.test(prompt)) {
@@ -224,6 +239,7 @@ http.createServer((req, res) => {
     if (req.url === '/link-calls') { res.end(JSON.stringify({ linkCalls })); return; }
     if (req.url === '/last-prompt') { res.end(lastBlueprintPrompt); return; }
     if (req.url === '/last-daily') { res.end(JSON.stringify({ prompt: lastDailyPrompt })); return; }
+    if (req.url === '/last-explain') { res.end(JSON.stringify({ prompt: lastExplainPrompt })); return; }
     if (req.url !== '/mode' && mode.fault !== 'none') {
       hits += 1;
       const fail = (code, status, message) => { res.statusCode = code; res.end(JSON.stringify({ error: { code, status, message } })); };

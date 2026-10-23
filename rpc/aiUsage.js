@@ -15,6 +15,9 @@
 //   AI_DAILY_LIGHT  (150)  short jobs per user: grading an answer, reading a date
 //   AI_GLOBAL_DAILY_HEAVY (400) / AI_GLOBAL_DAILY_LIGHT (4000)  all users together
 //   AI_MAX_PARALLEL (2)    whole-file AI jobs running at once per user
+//   AI_DAILY_EXPLAIN (20)  "Explain it" per user (23/10) - quick checks too,
+//                          with their own cap so explaining can't use up
+//                          the checks every typed answer needs
 //
 // Many accounts, one person (30/9): accounts are free, so without more the
 // global cap is the only thing between someone with a script and everyone
@@ -39,6 +42,7 @@ const GLOBAL = {
     light: num(process.env.AI_GLOBAL_DAILY_LIGHT, 4000)
 };
 const MAX_PARALLEL = num(process.env.AI_MAX_PARALLEL, 2);
+const EXPLAIN_LIMIT = num(process.env.AI_DAILY_EXPLAIN, 20);
 const UNVERIFIED = {
     heavy: num(process.env.AI_UNVERIFIED_HEAVY, 3),
     light: num(process.env.AI_UNVERIFIED_LIGHT, 30)
@@ -50,7 +54,9 @@ const PER_IP = {
 
 class AiLimitError extends Error {
     constructor(kind, why = 'user') {
-        super(why === 'unverified'
+        super(why === 'explain'
+            ? `You've used today's ${EXPLAIN_LIMIT} explanations - the count resets at midnight. Your answers are still checked.`
+            : why === 'unverified'
             ? `Confirm your email to keep using the AI today - until then an account gets ${UNVERIFIED[kind]} ${kind === 'heavy' ? 'file actions' : 'quick checks'} a day. The link is in your inbox; Settings > Account sends it again.`
             : why === 'ip'
                 ? 'Too many AI requests from this network today. It resets at midnight.'
@@ -117,12 +123,14 @@ function ipCounter(day, ip) {
 // ---- jobs running right now, per user ----
 const running = new Map();   // userId -> count
 
+// kind: one counter, or several at once ({ light: 1, explain: 1 }).
 async function incUser(userId, day, kind, by) {
+    const inc = typeof kind === 'string' ? { [kind]: by } : kind;
     try {
-        return await AiUsage.findOneAndUpdate({ userId, day }, { $inc: { [kind]: by } }, { upsert: true, new: true, setDefaultsOnInsert: true }).lean();
+        return await AiUsage.findOneAndUpdate({ userId, day }, { $inc: inc }, { upsert: true, new: true, setDefaultsOnInsert: true }).lean();
     } catch (err) {
         if (err && err.code === 11000) {   // two first-of-the-day upserts at once
-            return AiUsage.findOneAndUpdate({ userId, day }, { $inc: { [kind]: by } }, { new: true }).lean();
+            return AiUsage.findOneAndUpdate({ userId, day }, { $inc: inc }, { new: true }).lean();
         }
         throw err;
     }
@@ -130,7 +138,8 @@ async function incUser(userId, day, kind, by) {
 
 // Returns a ticket for release(), or null outside a user request (tests,
 // scripts, the desktop app - which uses the user's own key).
-async function reserve(kind) {
+// cap: 'explain' also counts it against the daily explanations (23/10).
+async function reserve(kind, cap = null) {
     const userId = currentUserId();
     if (!userId) return null;
     // At once: only whole-file jobs are limited (30/9) - the short ones
@@ -154,14 +163,17 @@ async function reserve(kind) {
             ? Math.min(UNVERIFIED[kind], LIMITS[kind]) : LIMITS[kind];
         g[kind] = (g[kind] || 0) + 1;
         if (perIp) perIp[kind] += 1;
-        const doc = await incUser(userId, day, kind, 1);
-        if ((doc && doc[kind]) > limit) {
+        const explain = cap === 'explain';
+        const inc = explain ? { [kind]: 1, explain: 1 } : { [kind]: 1 };
+        const doc = await incUser(userId, day, inc);
+        const overKind = (doc && doc[kind]) > limit;
+        if (overKind || (explain && (doc && doc.explain) > EXPLAIN_LIMIT)) {
             g[kind] -= 1;
             if (perIp) perIp[kind] = Math.max(0, perIp[kind] - 1);
-            await incUser(userId, day, kind, -1).catch(() => {});
-            throw new AiLimitError(kind, limit < LIMITS[kind] ? 'unverified' : 'user');
+            await incUser(userId, day, Object.fromEntries(Object.keys(inc).map(k => [k, -1]))).catch(() => {});
+            throw new AiLimitError(kind, overKind ? (limit < LIMITS[kind] ? 'unverified' : 'user') : 'explain');
         }
-        return { userId, day, kind, counted: limitParallel, ip };
+        return { userId, day, kind, counted: limitParallel, ip, explain };
     } catch (err) {
         if (limitParallel) running.set(userId, Math.max(0, (running.get(userId) || 1) - 1));
         throw err;
@@ -179,7 +191,7 @@ async function release(ticket, refund) {
         const c = ipUsed.get(ticket.ip);
         c[ticket.kind] = Math.max(0, c[ticket.kind] - 1);
     }
-    await incUser(ticket.userId, ticket.day, ticket.kind, -1).catch(err => console.warn('AI usage refund failed:', err.message));
+    await incUser(ticket.userId, ticket.day, ticket.explain ? { [ticket.kind]: -1, explain: -1 } : { [ticket.kind]: -1 }).catch(err => console.warn('AI usage refund failed:', err.message));
 }
 
 // Google didn't do (or bill) the work: busy, rate-limited, unreachable.
@@ -194,7 +206,7 @@ function notBilled(err) {
 
 async function today(userId) {
     const doc = await AiUsage.findOne({ userId, day: todayIso() }).lean();
-    return { heavy: doc ? doc.heavy : 0, light: doc ? doc.light : 0, limits: LIMITS };
+    return { heavy: doc ? doc.heavy : 0, light: doc ? doc.light : 0, explain: doc ? doc.explain || 0 : 0, limits: { ...LIMITS, explain: EXPLAIN_LIMIT } };
 }
 
-module.exports = { reserve, release, notBilled, today, forgetVerified, LIMITS, GLOBAL, UNVERIFIED, PER_IP, MAX_PARALLEL, AiLimitError };
+module.exports = { reserve, release, notBilled, today, forgetVerified, LIMITS, GLOBAL, UNVERIFIED, PER_IP, MAX_PARALLEL, EXPLAIN_LIMIT, AiLimitError };
