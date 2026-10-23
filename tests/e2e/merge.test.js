@@ -99,6 +99,27 @@ const inDays = (n) => { const d = new Date(Date.now() + n * 86400000); return { 
   r = await j(`/api/folders/${c._id}/merge`, { method: 'POST', body: JSON.stringify({ into: d._id }) }, token);
   check('merging a course that is gone: 404', r.status === 404, String(r.status));
 
+  // ---- A name with no course into a course (absorb)
+  const ORPHAN = 'הסתברות';
+  await db.collection('studyitems').insertMany([1, 2].map(i => ({ userId: uid, question: `יתום ${i}`, answer: 'x', category: ORPHAN, courseId: null, suspended: false, mode: 'recall', skillTag: 't', dueDate: now, interval: 0, repetitions: 0, easeFactor: 2.5, reviews: [], createdAt: now })));
+  await db.collection('examruns').insertOne({ userId: uid, course: ORPHAN, clientRunId: 'r9', startedAt: now, finishedAt: now, answers: [], score: 40 });
+  await db.collection('courseprofiles').insertOne({ userId: uid, course: ORPHAN, recurring: [{ topic: 'יתום', count: 2, of: 2 }], pastExams: [], links: [], linkedSkills: [], createdAt: now });
+  // same name, but already some course's: not touched
+  const dId = new mongoose.Types.ObjectId(String(d._id));
+  await db.collection('studyitems').insertOne({ userId: uid, question: 'של קורס אחר', answer: 'x', category: ORPHAN, courseId: dId, suspended: false, mode: 'recall', skillTag: 't', dueDate: now, interval: 0, repetitions: 0, easeFactor: 2.5, reviews: [], createdAt: now });
+  r = await j(`/api/folders/${into._id}/absorb`, { method: 'POST', body: JSON.stringify({ name: 'Uncategorized' }) }, token);
+  check('absorb "no course" itself: refused', r.status === 400, String(r.status));
+  r = await j(`/api/folders/${into._id}/absorb`, { method: 'POST', body: JSON.stringify({ name: ORPHAN }) }, other);
+  check('another student can\'t absorb into my course', r.status === 404, String(r.status));
+  r = await j(`/api/folders/${into._id}/absorb`, { method: 'POST', body: JSON.stringify({ name: ORPHAN }) }, token);
+  const orphanQs = await db.collection('studyitems').find({ userId: uid, question: /^יתום/ }).toArray();
+  const otherQ = await db.collection('studyitems').findOne({ userId: uid, question: 'של קורס אחר' });
+  const orun = await db.collection('examruns').findOne({ userId: uid, clientRunId: 'r9' });
+  check('absorb: the name\'s questions and mock exam are the course\'s now', r.status === 200 && orphanQs.length === 2 && orphanQs.every(q => q.category === INTO && same(q.courseId, iid)) && orun.course === INTO && same(orun.courseId, iid), JSON.stringify([r.status, orphanQs.map(q => q.category), orun.course]));
+  check('absorb: a record of that name that is another course\'s - not touched', otherQ.category === ORPHAN && same(otherQ.courseId, dId));
+  check('absorb: the course had an exam map - the name\'s goes', !(await db.collection('courseprofiles').findOne({ userId: uid, course: ORPHAN })) && !!(await db.collection('courseprofiles').findOne({ userId: uid, course: INTO })));
+  check('absorb: the course stays', (await j('/api/folders', {}, token)).body.some(f => f.name === INTO));
+
   console.log(results.join('\n'));
   console.log(`${results.filter(x => x.startsWith('PASS')).length}/${results.length}`);
   await mongoose.disconnect();

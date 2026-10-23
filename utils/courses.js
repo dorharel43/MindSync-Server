@@ -97,19 +97,15 @@ async function removeCourse(userId, courseId) {
   await require('../models/Event').updateMany({ userId, courseId }, { $set: { courseId: null, coursePicked: false } });
 }
 
-// One course into another (23/10): everything of `from` - by its id, and
-// what still carries only its name with no course - becomes `into`'s: files,
-// questions, mock exams, full exams and their results, exam events, and the
-// label of its tasks. Exam maps: `into`'s is kept (if both had one, `from`'s
-// goes - the exam map then offers a new analysis, its past exams changed);
-// `from` had the only one: it becomes `into`'s. The folder itself goes last,
-// so a merge that stopped half way is finished by running it again.
-async function mergeCourse(userId, from, into) {
-  const fromName = cleanName(from.name);
+// Everything `ofFrom(field)` selects becomes `into`'s (23/10) - shared by a
+// merge (a course into another) and absorbName (a name with no course into a
+// course): files, questions, mock exams, full exams and their results, the
+// tasks' label. Exam maps: `into`'s is kept (if both had one, the other goes -
+// the exam map then offers a new analysis, its past exams changed); else the
+// newest of the moved ones becomes `into`'s (a second, old copy goes - two
+// would clash on the unique name).
+async function moveInto(userId, ofFrom, fromName, into, counts) {
   const intoName = cleanName(into.name);
-  const counts = {};
-  // (courseId $in [null]: null or missing)
-  const ofFrom = (field) => ({ userId, $or: [{ courseId: from._id }, { [field]: fromName, courseId: { $in: [null] } }] });
   for (const [Model, field] of NAMED()) {
     if (Model.modelName === 'CourseProfile') continue;
     const r = await Model.updateMany(ofFrom(field), { $set: { [field]: intoName, courseId: into._id } });
@@ -120,16 +116,26 @@ async function mergeCourse(userId, from, into) {
   if (kept) {
     counts.examMapsDropped = (await CourseProfile.deleteMany({ ...ofFrom('course'), _id: { $ne: kept._id } })).deletedCount || 0;
   } else {
-    // One moves (the newest); a second one of `from` (an old name-only copy)
-    // would clash with it on the unique name - it goes.
     const mine = await CourseProfile.find(ofFrom('course')).sort({ updatedAt: -1, _id: -1 }).select('_id').lean();
     if (mine.length) {
       await CourseProfile.deleteMany({ _id: { $in: mine.slice(1).map(p => p._id) } });
       counts.examMapsMoved = (await CourseProfile.updateOne({ _id: mine[0]._id }, { $set: { course: intoName, courseId: into._id } })).modifiedCount || 0;
     }
   }
-  counts.Event = (await require('../models/Event').updateMany({ userId, courseId: from._id }, { $set: { courseId: into._id } })).modifiedCount || 0;
   counts.Task = (await require('../models/Task').updateMany({ userId, category: fromName }, { $set: { category: intoName } })).modifiedCount || 0;
+}
+
+// One course into another (23/10): everything of `from` - by its id, and
+// what still carries only its name with no course - and its exam events
+// become `into`'s. The folder itself goes last, so a merge that stopped half
+// way is finished by running it again.
+async function mergeCourse(userId, from, into) {
+  const fromName = cleanName(from.name);
+  const counts = {};
+  // (courseId $in [null]: null or missing)
+  const ofFrom = (field) => ({ userId, $or: [{ courseId: from._id }, { [field]: fromName, courseId: { $in: [null] } }] });
+  await moveInto(userId, ofFrom, fromName, into, counts);
+  counts.Event = (await require('../models/Event').updateMany({ userId, courseId: from._id }, { $set: { courseId: into._id } })).modifiedCount || 0;
   await Folder.deleteOne({ _id: from._id, userId });
   // An exam left with no course because its title named both ("מבחן
   // בסטטיסטיקה" - "סטטיסטיקה" and "מבוא לסטטיסטיקה"): with one left, it may
@@ -140,6 +146,18 @@ async function mergeCourse(userId, from, into) {
     const id = await examCourseId(userId, e.title);
     if (id) { await Event.updateOne({ _id: e._id, courseId: null, coursePicked: { $ne: true } }, { $set: { courseId: id } }); counts.examsLinked += 1; }
   }
+  return counts;
+}
+
+// A name with no course - questions whose course was typed by hand, a deleted
+// course's history - into one of the student's courses (23/10): everything
+// that carries the name and no course becomes the course's.
+async function absorbName(userId, name, into) {
+  const n = cleanName(name);
+  const counts = {};
+  if (NO_COURSE.has(n)) return counts;
+  const ofName = (field) => ({ userId, [field]: n, courseId: { $in: [null] } });
+  await moveInto(userId, ofName, n, into, counts);
   return counts;
 }
 
@@ -209,4 +227,4 @@ async function migrateCourses() {
   return counts;
 }
 
-module.exports = { NO_COURSE, PAST_EXAM_FILE, roleOf, cleanName, courseIdFor, courseIdsFor, examCourseId, renameClash, renameCourse, adoptByName, removeCourse, mergeCourse, migrateCourses };
+module.exports = { NO_COURSE, PAST_EXAM_FILE, roleOf, cleanName, courseIdFor, courseIdsFor, examCourseId, renameClash, renameCourse, adoptByName, removeCourse, mergeCourse, absorbName, migrateCourses };
