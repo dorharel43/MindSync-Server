@@ -284,7 +284,7 @@ async function callGemini({ apiKey, model, parts, maxTokens = 2048, forceJson = 
                 );
             }
             const retryAfterMs = parseRetryDelayMs(data);
-            throw geminiError('Gemini rate limit reached. Wait a minute, or switch to the local model in Settings.', {
+            throw geminiError('Gemini rate limit reached. Wait a minute and try again.', {
                 status: 429,
                 retryable: retryAfterMs !== null && retryAfterMs <= 20000,
                 retryAfterMs
