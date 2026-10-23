@@ -97,6 +97,37 @@ async function removeCourse(userId, courseId) {
   await require('../models/Event').updateMany({ userId, courseId }, { $set: { courseId: null, coursePicked: false } });
 }
 
+// One course into another (23/10): everything of `from` - by its id, and
+// what still carries only its name with no course - becomes `into`'s: files,
+// questions, mock exams, full exams and their results, exam events, and the
+// label of its tasks. Exam maps: `into`'s is kept (if both had one, `from`'s
+// goes - the exam map then offers a new analysis, its past exams changed);
+// `from` had the only one: it becomes `into`'s. The folder itself goes last,
+// so a merge that stopped half way is finished by running it again.
+async function mergeCourse(userId, from, into) {
+  const fromName = cleanName(from.name);
+  const intoName = cleanName(into.name);
+  const counts = {};
+  // (courseId $in [null]: null or missing)
+  const ofFrom = (field) => ({ userId, $or: [{ courseId: from._id }, { [field]: fromName, courseId: { $in: [null] } }] });
+  for (const [Model, field] of NAMED()) {
+    if (Model.modelName === 'CourseProfile') continue;
+    const r = await Model.updateMany(ofFrom(field), { $set: { [field]: intoName, courseId: into._id } });
+    counts[Model.modelName] = r.modifiedCount || 0;
+  }
+  const CourseProfile = require('../models/CourseProfile');
+  const kept = await CourseProfile.findOne({ userId, $or: [{ courseId: into._id }, { course: intoName }] }).select('_id').lean();
+  if (kept) {
+    counts.examMapsDropped = (await CourseProfile.deleteMany({ ...ofFrom('course'), _id: { $ne: kept._id } })).deletedCount || 0;
+  } else {
+    counts.examMapsMoved = (await CourseProfile.updateMany(ofFrom('course'), { $set: { course: intoName, courseId: into._id } })).modifiedCount || 0;
+  }
+  counts.Event = (await require('../models/Event').updateMany({ userId, courseId: from._id }, { $set: { courseId: into._id } })).modifiedCount || 0;
+  counts.Task = (await require('../models/Task').updateMany({ userId, category: fromName }, { $set: { category: intoName } })).modifiedCount || 0;
+  await Folder.deleteOne({ _id: from._id, userId });
+  return counts;
+}
+
 // The data from before courseId (8/10): every record that names a course gets
 // the id of the folder of that name - or null (no such folder, or no course);
 // exam events get the one course their title names; files get a role. Only
@@ -163,4 +194,4 @@ async function migrateCourses() {
   return counts;
 }
 
-module.exports = { NO_COURSE, PAST_EXAM_FILE, roleOf, cleanName, courseIdFor, courseIdsFor, examCourseId, renameClash, renameCourse, adoptByName, removeCourse, migrateCourses };
+module.exports = { NO_COURSE, PAST_EXAM_FILE, roleOf, cleanName, courseIdFor, courseIdsFor, examCourseId, renameClash, renameCourse, adoptByName, removeCourse, mergeCourse, migrateCourses };
