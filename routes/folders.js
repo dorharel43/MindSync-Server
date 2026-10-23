@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Folder = require('../models/Folder');
 const FileItem = require('../models/FileItem');
-const { renameCourse, renameClash, adoptByName, removeCourse, NO_COURSE } = require('../utils/courses');
+const { renameCourse, renameClash, adoptByName, removeCourse, mergeCourse, NO_COURSE } = require('../utils/courses');
 // The app's own names for "no course" and its upload choices ("__newcourse__",
 // "__new__:<name>") can't be a course's name (8/10).
 const reservedName = (name) => {
@@ -85,6 +85,23 @@ router.put(
       throw err;
     }
     res.json(folder);
+  })
+);
+
+// POST /api/folders/:id/merge { into } - this course into another of the
+// student's: everything of it moves there, then it is deleted (23/10).
+router.post(
+  '/:id/merge',
+  asyncHandler(async (req, res) => {
+    const isId = (v) => /^[a-f0-9]{24}$/i.test(String(v || ''));
+    if (!isId(req.params.id)) throw new ApiError(404, 'Folder not found');
+    const from = await Folder.findOne({ _id: req.params.id, userId: req.userId }).lean();
+    if (!from) throw new ApiError(404, 'Folder not found');
+    const into = isId(req.body.into) && String(req.body.into) !== String(from._id)
+      ? await Folder.findOne({ _id: req.body.into, userId: req.userId }).lean() : null;
+    if (!into) throw new ApiError(400, 'Choose another of your courses to merge into.');
+    const moved = await mergeCourse(req.userId, from, into);
+    res.json({ success: true, into: { id: into._id, name: into.name }, moved });
   })
 );
 
