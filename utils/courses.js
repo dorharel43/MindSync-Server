@@ -120,11 +120,26 @@ async function mergeCourse(userId, from, into) {
   if (kept) {
     counts.examMapsDropped = (await CourseProfile.deleteMany({ ...ofFrom('course'), _id: { $ne: kept._id } })).deletedCount || 0;
   } else {
-    counts.examMapsMoved = (await CourseProfile.updateMany(ofFrom('course'), { $set: { course: intoName, courseId: into._id } })).modifiedCount || 0;
+    // One moves (the newest); a second one of `from` (an old name-only copy)
+    // would clash with it on the unique name - it goes.
+    const mine = await CourseProfile.find(ofFrom('course')).sort({ updatedAt: -1, _id: -1 }).select('_id').lean();
+    if (mine.length) {
+      await CourseProfile.deleteMany({ _id: { $in: mine.slice(1).map(p => p._id) } });
+      counts.examMapsMoved = (await CourseProfile.updateOne({ _id: mine[0]._id }, { $set: { course: intoName, courseId: into._id } })).modifiedCount || 0;
+    }
   }
   counts.Event = (await require('../models/Event').updateMany({ userId, courseId: from._id }, { $set: { courseId: into._id } })).modifiedCount || 0;
   counts.Task = (await require('../models/Task').updateMany({ userId, category: fromName }, { $set: { category: intoName } })).modifiedCount || 0;
   await Folder.deleteOne({ _id: from._id, userId });
+  // An exam left with no course because its title named both ("מבחן
+  // בסטטיסטיקה" - "סטטיסטיקה" and "מבוא לסטטיסטיקה"): with one left, it may
+  // name exactly one now. (Never one the student answered.)
+  const Event = require('../models/Event');
+  counts.examsLinked = 0;
+  for (const e of await Event.find({ userId, type: 'exam', courseId: null, coursePicked: { $ne: true } }).select('title').lean()) {
+    const id = await examCourseId(userId, e.title);
+    if (id) { await Event.updateOne({ _id: e._id, courseId: null, coursePicked: { $ne: true } }, { $set: { courseId: id } }); counts.examsLinked += 1; }
+  }
   return counts;
 }
 

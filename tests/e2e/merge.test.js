@@ -45,6 +45,11 @@ const inDays = (n) => { const d = new Date(Date.now() + n * 86400000); return { 
   await db.collection('courseprofiles').insertOne({ userId: uid, course: INTO, courseId: iid, recurring: [{ topic: 'יעד', count: 2, of: 2 }], pastExams: ['c', 'd'], links: [], linkedSkills: [], createdAt: now });
   const ex = (await j('/api/events', { method: 'POST', body: JSON.stringify({ title: 'מבחן סוף סמסטר', type: 'exam', time: '09:00', courseId: String(from._id), ...inDays(10) }) }, token)).body;
   await db.collection('tasks').insertOne({ userId: uid, title: 'תרגיל 3', category: FROM, status: 'open', createdAt: now });
+  // a file that carries only the name (old)
+  await db.collection('fileitems').insertOne({ userId: uid, name: 'ישן.pdf', content: 'x', folder: FROM, courseId: null, role: 'material', createdAt: now });
+  // an exam whose title named both courses - so neither (not asked yet)
+  const both = (await j('/api/events', { method: 'POST', body: JSON.stringify({ title: 'מבחן בסטטיסטיקה', type: 'exam', time: '09:00', ...inDays(20) }) }, token)).body;
+  check('setup: an exam naming both courses is linked to neither', both.courseId === null, JSON.stringify(both.courseId));
 
   // ---- refused merges
   let r = await j(`/api/folders/${from._id}/merge`, { method: 'POST', body: JSON.stringify({ into: from._id }) }, token);
@@ -62,7 +67,7 @@ const inDays = (n) => { const d = new Date(Date.now() + n * 86400000); return { 
   const folders = (await j('/api/folders', {}, token)).body;
   check('the merged course is gone, the target stays', folders.length === 1 && folders[0].name === INTO, JSON.stringify(folders.map(f => f.name)));
   const files = await db.collection('fileitems').find({ userId: uid }).toArray();
-  check('files: all in the target (name and id)', files.length === 4 && files.every(f => f.folder === INTO && same(f.courseId, iid)), JSON.stringify(files.map(f => [f.name, f.folder])));
+  check('files: all in the target (name and id) - the old name-only one too', files.length === 5 && files.every(f => f.folder === INTO && same(f.courseId, iid)), JSON.stringify(files.map(f => [f.name, f.folder])));
   const qs = await db.collection('studyitems').find({ userId: uid }).toArray();
   check('questions: all in the target - the old one by name too', qs.length === 5 && qs.every(q => q.category === INTO && same(q.courseId, iid)), JSON.stringify(qs.map(q => [q.question, q.category, String(q.courseId)])));
   const run = await db.collection('examruns').findOne({ userId: uid });
@@ -73,6 +78,8 @@ const inDays = (n) => { const d = new Date(Date.now() + n * 86400000); return { 
   check('exam maps: both had one - the target\'s kept, the other dropped', profiles.length === 1 && profiles[0].course === INTO && profiles[0].recurring[0].topic === 'יעד', JSON.stringify(profiles.map(p => [p.course, p.recurring[0].topic])));
   const evNow = await db.collection('events').findOne({ _id: new mongoose.Types.ObjectId(String(ex._id)) });
   check('the exam event: now the target\'s (still picked)', same(evNow.courseId, iid) && evNow.coursePicked === true, JSON.stringify([evNow.courseId, evNow.coursePicked]));
+  const bothNow = await db.collection('events').findOne({ _id: new mongoose.Types.ObjectId(String(both._id)) });
+  check('the exam that named both courses: with one left, linked to it', same(bothNow.courseId, iid) && !bothNow.coursePicked, JSON.stringify([bothNow.courseId, bothNow.coursePicked]));
   const task = await db.collection('tasks').findOne({ userId: uid, title: 'תרגיל 3' });
   check('its task carries the target\'s name', task.category === INTO, task.category);
   const stats = (await j('/api/study/stats', {}, token)).body;
