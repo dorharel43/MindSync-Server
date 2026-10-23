@@ -203,6 +203,9 @@ studyItemSchema.add({ courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Fo
 // answer, what went wrong, and the line of the material it rests on. Shown
 // the next time the question comes up - after answering, never before.
 const mistakeSchema = new mongoose.Schema({
+    // The question as it was shown (a new version has other numbers): the
+    // start of it, to tell "this version" from "another version".
+    question: { type: String, trim: true, maxlength: 400, default: '' },
     typed: { type: String, trim: true, maxlength: 1000, default: '' },
     right: { type: String, trim: true, maxlength: 1200, default: '' },
     slip: { type: String, trim: true, maxlength: 600, default: '' },

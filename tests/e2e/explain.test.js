@@ -53,7 +53,7 @@ const filler = (w, n) => Array.from({ length: n }, (_, i) => `${w} ${i}.`).join(
   check('what the student wrote is in the prompt as data', /<student_answer>\nכן, הוא מתכנס/.test(prompt));
   let list = (await j('/api/study', {}, token)).body;
   let saved = (Array.isArray(list) ? list : list.items || []).find(i => String(i._id || i.id) === id);
-  check('saved on the question: what was typed, why, the slip, the quote', saved && saved.lastMistake && saved.lastMistake.typed.startsWith('כן, הוא מתכנס') && saved.lastMistake.right === r.right && saved.lastMistake.quote === QUOTE && saved.lastMistake.file === FILE && !!saved.lastMistake.at, JSON.stringify(saved && saved.lastMistake).slice(0, 200));
+  check('saved on the question: the question shown, what was typed, why, the slip, the quote', saved && saved.lastMistake && saved.lastMistake.question === item.question && saved.lastMistake.typed.startsWith('כן, הוא מתכנס') && saved.lastMistake.right === r.right && saved.lastMistake.quote === QUOTE && saved.lastMistake.file === FILE && !!saved.lastMistake.at, JSON.stringify(saved && saved.lastMistake).slice(0, 200));
 
   // ---- 2. A "quote" that is in no text is dropped - never a made-up source.
   await fake({ explain: 'fakequote' });
@@ -65,6 +65,15 @@ const filler = (w, n) => Array.from({ length: n }, (_, i) => `${w} ${i}.`).join(
   r = await ask(token, aiItem, { typed: '0' }); calls++;
   prompt = await lastPrompt();
   check('an AI-written answer: no material sent, no quote, told to check it', r.right && r.quote === '' && r.grounded === false && !/<material file=/.test(prompt) && /written by AI - check it/.test(prompt) && /"quote": "" \(there is no course material here\)/.test(prompt), JSON.stringify([r.quote, r.grounded, aiItem.solutionSource]));
+
+  // ---- 3b. The student's own solution (or an imported card) isn't "the course material".
+  r = await ask(token, item, { typed: 'מתכנס', solutionSource: 'user' }); calls++;
+  prompt = await lastPrompt();
+  check('the student\'s own solution as the reference: "check it", no material, no quote', r.right && r.quote === '' && !/<material file=/.test(prompt) && /<reference source="the student's own earlier solution - check it">/.test(prompt) && /If the reference is wrong or missing/.test(prompt), JSON.stringify([r.quote, r.grounded]));
+  const own = (await j('/api/study/bulk', { method: 'POST', body: JSON.stringify({ items: [1, 2, 3].map(k => ({ question: `תרגיל ${k} בקורס הנפרד`, answer: '', mySolution: `הפתרון שלי ${k}`, mode: 'practice', category: 'קורס בודד' })) }) }, token)).body;
+  await Promise.all((own.items || []).map(i => j(`/api/study/${i._id}`, { method: 'PUT', body: JSON.stringify({ mySolution: 'הפתרון שלי' }) }, token)));
+  const picked = (await j(`/api/study/exam/pick?course=${encodeURIComponent('קורס בודד')}&count=3`, {}, token)).body;
+  check('mock exam: an answer that is the student\'s own solution comes with source "user"', Array.isArray(picked) && picked.length === 3 && picked.every(p => p.answer === 'הפתרון שלי' && p.solutionSource === 'user'), JSON.stringify(picked).slice(0, 200));
 
   // ---- 4. Nothing typed (missed it in the head / "I don't know").
   r = await ask(token, item, { typed: '' }); calls++;

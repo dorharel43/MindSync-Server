@@ -486,6 +486,7 @@ async function callGeminiResilient(opts) {
 
     let firstErr = null;
     let lastErr = null;
+    let anyTimedOut = false;   // (a timeout may have been billed - see below)
     for (let i = 0; i < chain.length; i++) {
         const model = chain[i];
         if (dailyQuotaUntil[model] && dailyQuotaUntil[model] > Date.now()) {
@@ -507,6 +508,7 @@ async function callGeminiResilient(opts) {
             if (err.spendingCap) { noteSpendingCap(err); throw err; }
             if (!firstErr) firstErr = err;
             lastErr = err;
+            if (err.timedOut) anyTimedOut = true;
             if (err.dailyQuota) dailyQuotaUntil[model] = err.resetAt;
             // 404 on the CHOSEN model = a model id Google doesn't know (a
             // retired preview, say) - worth falling back to one that exists.
@@ -521,7 +523,7 @@ async function callGeminiResilient(opts) {
     // `overloaded` / the status, a Google outage used up the student's daily
     // allowance (rpc/aiUsage.js gives it back only for work Google didn't
     // do). A timeout may have been billed, so it isn't marked.
-    const flags = firstErr.timedOut || lastErr.timedOut ? {} : { status: lastErr.status, overloaded: true };
+    const flags = anyTimedOut ? {} : { status: lastErr.status, overloaded: true };
     if (firstErr.status === 429 && lastErr.status === 429) {
         const reset = firstErr.resetAt || lastErr.resetAt;
         throw Object.assign(new Error(`You've used today's Gemini quota on every model. It resets${reset ? ` at ${localTimeLabel(reset)}` : ' within 24 hours'}.`), { status: 429 });
