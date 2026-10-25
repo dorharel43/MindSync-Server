@@ -214,8 +214,9 @@
             return true;
         },
 
-        'send-feedback': async (text) => {
-            try { return await api('POST', '/feedback', { text, page: location.pathname + location.hash }); }
+        // `where`: the screen it was sent from (e.g. "study/exam"), for the admin page.
+        'send-feedback': async (text, where) => {
+            try { return await api('POST', '/feedback', { text, page: [where, location.pathname + location.hash].filter(Boolean).join(' ') }); }
             catch (err) { return { error: err.message }; }
         },
 
